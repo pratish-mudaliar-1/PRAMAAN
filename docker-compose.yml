@@ -1,0 +1,64 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: pramaan
+      POSTGRES_USER: pramaan
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pramaan_dev}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./pramaan-api/db/migrations/001_initial.sql:/docker-entrypoint-initdb.d/001_initial.sql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pramaan"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: ./pramaan-api
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://pramaan:${POSTGRES_PASSWORD:-pramaan_dev}@db:5432/pramaan
+      USE_SQLITE: "false"
+      SECRET_KEY: ${SECRET_KEY:-dev_secret_key_change_in_prod}
+      SEED_ON_START: "true"
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./pramaan-api:/app
+
+  web:
+    build: ./pramaan-web
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_URL: http://localhost:8000
+    depends_on:
+      - api
+    volumes:
+      - ./pramaan-web:/app
+      - /app/node_modules
+
+  edge-sim:
+    build: ./pramaan-edge
+    restart: unless-stopped
+    environment:
+      API_URL: http://api:8000
+      SIM_INTERVAL_SECONDS: "60"
+      SIMULATED: "true"
+    depends_on:
+      - api
+    volumes:
+      - ./pramaan-edge:/app
+
+volumes:
+  pg_data:
