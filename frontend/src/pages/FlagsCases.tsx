@@ -1,22 +1,19 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ExternalLink, Clock, AlertTriangle, Info } from 'lucide-react';
-import { MOCK_FLAGS, MOCK_AUDIT } from '@/api/mockData';
+import { ExternalLink, Clock, RefreshCw } from 'lucide-react';
+import { useFlags, useFlag, useResolveFlag } from '@/hooks/useFlags';
+import { useCentres } from '@/hooks/useCentres';
 import { StatusChip } from '@/components/status/StatusChip';
-
-function formatSLA(deadline: string) {
-  const diff = new Date(deadline).getTime() - Date.now();
-  const h = Math.floor(diff / 3_600_000);
-  if (diff < 0) return <span className="sla-critical font-mono text-xs font-bold">Overdue</span>;
-  if (h < 12)   return <span className="sla-critical font-mono text-xs">{h}h left</span>;
-  if (h < 48)   return <span className="sla-warning  font-mono text-xs">{h}h left</span>;
-  return <span className="sla-ok font-mono text-xs">{Math.floor(h / 24)}d left</span>;
-}
+import type { Flag } from '@/types';
 
 const FLAG_TYPE_LABELS: Record<string, string> = {
-  OCCUPANCY: 'Occupancy', ITEM_ABSENT: 'Item absent',
-  FEED_HEALTH: 'Feed health', DUPLICATE_EVIDENCE: 'Duplicate evidence',
-  CAMERA_SWAP: 'Camera swap', GHOST_BATCH: 'Ghost batch',
+  ATTENDANCE_RED: 'Attendance Red',
+  ATTENDANCE_AMBER_REPEAT: 'Amber Repeat',
+  GHOST_BATCH: 'Ghost Batch',
+  ITEM_ABSENT: 'Item Absent',
+  DEVICE_OFFLINE: 'Device Offline',
+  INTEGRITY_CHAIN_BREAK: 'Integrity Break',
+  EVIDENCE_DUPLICATE: 'Evidence Duplicate',
 };
 
 export function FlagsCasesPage() {
@@ -24,11 +21,25 @@ export function FlagsCasesPage() {
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [selectedFlag, setSelectedFlag] = useState<string | null>(null);
 
-  const types   = ['ALL', 'OCCUPANCY', 'CAMERA_SWAP', 'GHOST_BATCH', 'ITEM_ABSENT', 'FEED_HEALTH', 'DUPLICATE_EVIDENCE'];
-  const statuses = ['ALL', 'OPEN', 'TC_RESPONDED', 'UNDER_REVIEW', 'CLOSED'];
+  const { data: flagsData, isPending, isError, refetch } = useFlags({ limit: 200 });
+  const { data: centresData } = useCentres({ limit: 200 });
+  const allFlags   = flagsData?.items ?? [];
+  const allCentres = centresData?.items ?? [];
 
-  const filtered = MOCK_FLAGS.filter(f => {
-    const t = typeFilter   === 'ALL' || f.type   === typeFilter;
+  const types = [
+    'ALL',
+    'ATTENDANCE_RED',
+    'ATTENDANCE_AMBER_REPEAT',
+    'GHOST_BATCH',
+    'ITEM_ABSENT',
+    'DEVICE_OFFLINE',
+    'INTEGRITY_CHAIN_BREAK',
+    'EVIDENCE_DUPLICATE',
+  ];
+  const statuses = ['ALL', 'OPEN', 'UNDER_REVIEW', 'CLOSED_CONFIRMED', 'CLOSED_DISMISSED'];
+
+  const filtered = allFlags.filter(f => {
+    const t = typeFilter   === 'ALL' || f.flag_type === typeFilter;
     const s = statusFilter === 'ALL' || f.status === statusFilter;
     return t && s;
   }).sort((a, b) => {
@@ -36,7 +47,7 @@ export function FlagsCasesPage() {
     return sev[a.severity] - sev[b.severity];
   });
 
-  const selected = selectedFlag ? MOCK_FLAGS.find(f => f.id === selectedFlag) : null;
+  const selected = selectedFlag ? allFlags.find(f => f.id === selectedFlag) : null;
 
   return (
     <div className="page-root">
@@ -47,45 +58,40 @@ export function FlagsCasesPage() {
             Flags &amp; Cases
           </h1>
           <p className="text-sm mt-0.5" style={{ color: 'var(--text-secondary)' }}>
-            Unified exception inbox — exception-first ordering
+            Unified exception inbox — backend reconciliation rules
           </p>
         </div>
-        <span className="simulated-badge">SIMULATED DATA</span>
+        <div className="flex items-center gap-2">
+          {isPending && <RefreshCw size={14} className="animate-spin" style={{ color: 'var(--text-disabled)' }} />}
+          {isError && <button onClick={() => refetch()} className="neu-btn neu-btn-xs">Retry</button>}
+        </div>
       </div>
 
-      {/* Principle banner */}
-      <div className="neu-alert-info">
-        <Info size={14} style={{ color: 'var(--accent)', flexShrink: 0, marginTop: 2 }} />
-        <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-          Flags are leads for review, not proven violations. Every flag shows the rule, numbers, time window and evidence.
-          The training centre has a response path on every flag.
-        </p>
+      {/* Filter bar */}
+      <div className="flex gap-2 flex-wrap items-center">
+        <span className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>Type:</span>
+        {types.map(t => (
+          <button
+            key={t}
+            className={`neu-btn neu-btn-xs ${typeFilter === t ? 'neu-btn-primary' : ''}`}
+            onClick={() => setTypeFilter(t)}
+          >
+            {t === 'ALL' ? 'All types' : (FLAG_TYPE_LABELS[t] ?? t)}
+          </button>
+        ))}
       </div>
 
-      {/* Filters */}
-      <div className="flex gap-3 flex-wrap">
-        <div className="neu-segment-group" role="group" aria-label="Filter by flag type">
-          {types.map(t => (
-            <button
-              key={t}
-              className={`neu-segment ${typeFilter === t ? 'active' : ''}`}
-              onClick={() => setTypeFilter(t)}
-            >
-              {t === 'ALL' ? 'All types' : FLAG_TYPE_LABELS[t] ?? t}
-            </button>
-          ))}
-        </div>
-        <div className="neu-segment-group" role="group" aria-label="Filter by status">
-          {statuses.map(s => (
-            <button
-              key={s}
-              className={`neu-segment ${statusFilter === s ? 'active' : ''}`}
-              onClick={() => setStatusFilter(s)}
-            >
-              {s === 'ALL' ? 'All statuses' : s.replace('_', ' ')}
-            </button>
-          ))}
-        </div>
+      <div className="flex gap-2 flex-wrap items-center">
+        <span className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>Status:</span>
+        {statuses.map(s => (
+          <button
+            key={s}
+            className={`neu-btn neu-btn-xs ${statusFilter === s ? 'neu-btn-primary' : ''}`}
+            onClick={() => setStatusFilter(s)}
+          >
+            {s.replace(/_/g, ' ')}
+          </button>
+        ))}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -100,7 +106,7 @@ export function FlagsCasesPage() {
             <table className="pramaan-table pramaan-table-clickable min-w-[600px]" role="grid" aria-label="Flags table">
               <thead>
                 <tr>
-                  {['Centre', 'Type', 'Severity', 'SLA', 'Status', ''].map(h => <th key={h}>{h}</th>)}
+                  {['Centre', 'Type', 'Severity', 'Created', 'Status', ''].map(h => <th key={h}>{h}</th>)}
                 </tr>
               </thead>
               <tbody>
@@ -110,43 +116,54 @@ export function FlagsCasesPage() {
                       No flags match the current filters.
                     </td>
                   </tr>
-                ) : filtered.map(f => (
-                  <tr
-                    key={f.id}
-                    onClick={() => setSelectedFlag(f.id === selectedFlag ? null : f.id)}
-                    style={{
-                      cursor: 'pointer',
-                      background: selectedFlag === f.id ? 'rgba(111,140,255,0.08)' : undefined,
-                    }}
-                  >
-                    <td>
-                      <p className="font-medium text-sm" style={{ color: 'var(--text-primary)' }}>{f.centre_name}</p>
-                      <p className="text-[10px] font-mono" style={{ color: 'var(--text-disabled)' }}>{f.id}</p>
-                    </td>
-                    <td>
-                      <StatusChip
-                        status={f.type}
-                        label={FLAG_TYPE_LABELS[f.type] ?? f.type}
-                        size="xs"
-                      />
-                    </td>
-                    <td><StatusChip status={f.severity} size="xs" /></td>
-                    <td>{formatSLA(f.sla_deadline)}</td>
-                    <td><StatusChip status={f.status} size="xs" /></td>
-                    <td>
-                      {f.evidence_link && (
+                ) : filtered.map(f => {
+                  const centre = allCentres.find(c => c.id === f.centre_id);
+                  const evidenceLink = f.flag_type === 'GHOST_BATCH'
+                    ? `/ghost-batches/${f.session_id ?? ''}`
+                    : f.flag_type === 'INTEGRITY_CHAIN_BREAK'
+                    ? '/camera-integrity'
+                    : `/centres/${f.centre_id}`;
+
+                  return (
+                    <tr
+                      key={f.id}
+                      onClick={() => setSelectedFlag(f.id === selectedFlag ? null : f.id)}
+                      style={{
+                        cursor: 'pointer',
+                        background: selectedFlag === f.id ? 'rgba(111,140,255,0.08)' : undefined,
+                      }}
+                    >
+                      <td>
+                        <p className="font-medium text-sm" style={{ color: 'var(--text-primary)' }}>{centre?.name ?? f.centre_id}</p>
+                        <p className="text-[10px] font-mono" style={{ color: 'var(--text-disabled)' }}>{f.id}</p>
+                      </td>
+                      <td>
+                        <StatusChip
+                          status={f.flag_type}
+                          label={FLAG_TYPE_LABELS[f.flag_type] ?? f.flag_type}
+                          size="xs"
+                        />
+                      </td>
+                      <td><StatusChip status={f.severity} size="xs" /></td>
+                      <td>
+                        <span className="text-xs font-mono" style={{ color: 'var(--text-secondary)' }}>
+                          {new Date(f.created_at).toLocaleDateString('en-IN')}
+                        </span>
+                      </td>
+                      <td><StatusChip status={f.status} size="xs" /></td>
+                      <td>
                         <Link
-                          to={f.evidence_link}
+                          to={evidenceLink}
                           className="neu-btn neu-btn-xs"
                           style={{ textDecoration: 'none' }}
                           onClick={e => e.stopPropagation()}
                         >
                           <ExternalLink size={11} /> View
                         </Link>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -159,7 +176,7 @@ export function FlagsCasesPage() {
           ) : (
             <div className="neu-well p-6 text-center">
               <p style={{ color: 'var(--text-disabled)', fontSize: '0.85rem' }}>
-                Click a flag to see rule, evidence and TC response path.
+                Click a flag to view explainability details, rules, and audit trail.
               </p>
             </div>
           )}
@@ -169,9 +186,20 @@ export function FlagsCasesPage() {
   );
 }
 
-function FlagDetail({ flag }: { flag: typeof MOCK_FLAGS[0] }) {
-  const [tcNote, setTcNote] = useState('');
-  const relatedAudit = MOCK_AUDIT.filter(a => a.entity_id === flag.id);
+function FlagDetail({ flag }: { flag: Flag }) {
+  const { data: centresData } = useCentres({ limit: 200 });
+  const resolve = useResolveFlag();
+  const centre = (centresData?.items ?? []).find(c => c.id === flag.centre_id);
+  const [resolving, setResolving] = useState(false);
+
+  const handleResolve = async (status: 'CLOSED_CONFIRMED' | 'CLOSED_DISMISSED') => {
+    setResolving(true);
+    try {
+      await resolve.mutateAsync({ flagId: flag.id, body: { resolution_reason: 'Reviewed via dashboard', status } });
+    } finally {
+      setResolving(false);
+    }
+  };
 
   return (
     <div className="space-y-3">
@@ -179,81 +207,46 @@ function FlagDetail({ flag }: { flag: typeof MOCK_FLAGS[0] }) {
       <div className="neu-card p-4">
         <p className="section-header">Flag detail</p>
         <p className="font-semibold text-sm mb-1" style={{ color: 'var(--text-primary)' }}>{flag.id}</p>
-        <p className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>{flag.centre_name}</p>
+        <p className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>{centre?.name ?? flag.centre_id}</p>
         <div className="flex gap-2 flex-wrap mb-3">
-          <StatusChip status={flag.type} label={flag.type.replace('_', ' ')} size="xs" />
+          <StatusChip status={flag.flag_type} label={FLAG_TYPE_LABELS[flag.flag_type] ?? flag.flag_type} size="xs" />
           <StatusChip status={flag.severity} size="xs" />
           <StatusChip status={flag.status} size="xs" />
         </div>
 
         <div className="rule-card mb-3">
-          <p className="text-xs font-semibold mb-1" style={{ color: 'var(--accent)' }}>Rule fired</p>
-          <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>{flag.rule_fired}</p>
+          <p className="text-xs font-semibold mb-1" style={{ color: 'var(--accent)' }}>{flag.rule_name}</p>
+          <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>{flag.description}</p>
         </div>
 
-        <div className="flex items-center gap-1 text-xs mb-3" style={{ color: 'var(--text-disabled)' }}>
+        <div className="flex items-center gap-1 text-xs mb-1" style={{ color: 'var(--text-disabled)' }}>
           <Clock size={10} />
           Created: {new Date(flag.created_at).toLocaleString('en-IN')}
         </div>
-        <div className="flex items-center gap-1 text-xs" style={{ color: 'var(--text-disabled)' }}>
-          <AlertTriangle size={10} />
-          SLA: {new Date(flag.sla_deadline).toLocaleString('en-IN')}
-        </div>
-      </div>
-
-      {/* TC response */}
-      <div className="neu-card p-4">
-        <p className="section-header">TC response</p>
-        {flag.tc_response ? (
-          <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>{flag.tc_response}</p>
-        ) : (
-          <div className="space-y-2">
-            <p className="text-xs" style={{ color: 'var(--text-disabled)' }}>No response yet. TC can add a note:</p>
-            <textarea
-              className="neu-input"
-              style={{ minHeight: 80, resize: 'vertical' }}
-              placeholder="Training Centre response note…"
-              value={tcNote}
-              onChange={e => setTcNote(e.target.value)}
-              aria-label="TC response note"
-            />
-            <button className="neu-btn neu-btn-primary neu-btn-sm w-full">Submit response</button>
-          </div>
-        )}
       </div>
 
       {/* Actions */}
       <div className="neu-card p-4 space-y-2">
         <p className="section-header">Actions</p>
-        <button className="neu-btn w-full neu-btn-sm">Request inspection</button>
-        <button className="neu-btn w-full neu-btn-sm">Request TC explanation</button>
-        <button className="neu-btn w-full neu-btn-sm neu-btn-danger">Escalate (note required)</button>
-        <button className="neu-btn w-full neu-btn-sm" style={{ color: 'var(--text-disabled)' }}>Close as explained</button>
+        <button
+          className="neu-btn w-full neu-btn-sm"
+          disabled={resolving || flag.status !== 'OPEN'}
+          onClick={() => handleResolve('CLOSED_CONFIRMED')}
+        >
+          Confirm (Close Confirmed)
+        </button>
+        <button
+          className="neu-btn w-full neu-btn-sm neu-btn-danger"
+          disabled={resolving || flag.status !== 'OPEN'}
+          onClick={() => handleResolve('CLOSED_DISMISSED')}
+        >
+          Dismiss Flag
+        </button>
+        {flag.status !== 'OPEN' && (
+          <p className="text-xs text-center" style={{ color: 'var(--text-disabled)' }}>Flag is already {flag.status.replace(/_/g, ' ')}</p>
+        )}
       </div>
 
-      {/* Audit trail */}
-      {relatedAudit.length > 0 && (
-        <div className="neu-card p-4">
-          <p className="section-header">Audit trail</p>
-          <div className="space-y-2">
-            {relatedAudit.map(a => (
-              <div key={a.id} className="flex gap-2">
-                <div
-                  className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0"
-                  style={{ background: 'var(--accent)' }}
-                />
-                <div>
-                  <p className="text-xs" style={{ color: 'var(--text-primary)' }}>{a.action.replace(/_/g, ' ')}</p>
-                  {a.note && <p className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>{a.note}</p>}
-                  <p className="text-[10px] font-mono" style={{ color: 'var(--text-disabled)' }}>
-                    {a.actor} · {new Date(a.ts).toLocaleString('en-IN')}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

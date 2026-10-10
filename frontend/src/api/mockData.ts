@@ -1,7 +1,7 @@
-﻿import type {
-  Centre, Camera, Session, Batch, GhostEvaluation, Flag,
+import type {
+  Centre, Camera, Batch, GhostEvaluation, Flag,
   AuditEvent, EdgeDevice, ThresholdConfig, ViewEvent,
-  ClaimedVsObservedPoint,
+  CameraBaseline, ClaimedVsObservedPoint,
 } from '@/types';
 
 // â”€â”€â”€ Centres â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -10,8 +10,11 @@ export const MOCK_CENTRES: Centre[] = [
   {
     id: 'CTR-A',
     name: 'MSDE Skill Lab Delhi',
-    state: 'Delhi',
-    scheme: 'PMKVY 4.0',
+    state_code: 'DL',
+    scheme_code: 'PMKVY',
+    district: 'New Delhi',
+    registration_no: 'TC-DL-001',
+    is_active: true,
     status: 'RED',
     lat: 28.6139,
     lng: 77.209,
@@ -23,8 +26,11 @@ export const MOCK_CENTRES: Centre[] = [
   {
     id: 'CTR-B',
     name: 'Tailoring Hub Jaipur',
-    state: 'Rajasthan',
-    scheme: 'PMKVY 4.0',
+    state_code: 'RJ',
+    scheme_code: 'PMKVY',
+    district: 'Jaipur',
+    registration_no: 'TC-RJ-001',
+    is_active: true,
     status: 'AMBER',
     lat: 26.9124,
     lng: 75.7873,
@@ -36,9 +42,12 @@ export const MOCK_CENTRES: Centre[] = [
   {
     id: 'CTR-C',
     name: 'Computer Centre Pune',
-    state: 'Maharashtra',
-    scheme: 'DDUGKY',
-    status: 'EVIDENCE_COMPROMISED' as any,
+    state_code: 'MH',
+    scheme_code: 'DDUGKY',
+    district: 'Pune',
+    registration_no: 'TC-MH-001',
+    is_active: true,
+    status: 'AMBER',
     lat: 18.5204,
     lng: 73.8567,
     last_heartbeat: '2026-10-04T17:01:00+05:30',
@@ -49,8 +58,11 @@ export const MOCK_CENTRES: Centre[] = [
   {
     id: 'CTR-D',
     name: 'Skill Centre Patna',
-    state: 'Bihar',
-    scheme: 'PMKVY 4.0',
+    state_code: 'BR',
+    scheme_code: 'PMKVY',
+    district: 'Patna',
+    registration_no: 'TC-BR-001',
+    is_active: true,
     status: 'AMBER',
     lat: 25.5941,
     lng: 85.1376,
@@ -62,9 +74,12 @@ export const MOCK_CENTRES: Centre[] = [
   {
     id: 'CTR-E',
     name: 'Regional Centre Bhopal',
-    state: 'Madhya Pradesh',
-    scheme: 'DDUGKY',
-    status: 'NO-DATA',
+    state_code: 'MP',
+    scheme_code: 'DDUGKY',
+    district: 'Bhopal',
+    registration_no: 'TC-MP-001',
+    is_active: true,
+    status: 'NO_DATA',
     lat: 23.2599,
     lng: 77.4126,
     last_heartbeat: '2026-10-01T09:00:00+05:30',
@@ -75,8 +90,11 @@ export const MOCK_CENTRES: Centre[] = [
   {
     id: 'CTR-F',
     name: 'Model Centre Bengaluru',
-    state: 'Karnataka',
-    scheme: 'PMKVY 4.0',
+    state_code: 'KA',
+    scheme_code: 'PMKVY',
+    district: 'Bengaluru Urban',
+    registration_no: 'TC-KA-001',
+    is_active: true,
     status: 'GREEN',
     lat: 12.9716,
     lng: 77.5946,
@@ -93,22 +111,22 @@ function genViewEvents(): ViewEvent[] {
   const base = new Date('2026-10-04T09:00:00+05:30');
   const events: ViewEvent[] = [];
   const states: Array<[number, string, number]> = [
-    // [minutes offset, state, similarity]
-    [0, 'SAME_VIEW', 0.89],
-    [5, 'SAME_VIEW', 0.87],
-    [10, 'SAME_VIEW', 0.91],
-    [15, 'SAME_VIEW', 0.86],
-    [20, 'SAME_VIEW', 0.88],
-    [25, 'SAME_VIEW', 0.84],
-    [30, 'SAME_VIEW', 0.82],
-    [35, 'VIEW_DRIFTED', 0.71],
-    [40, 'VIEW_MISMATCH', 0.28],
-    [45, 'VIEW_MISMATCH', 0.21],
-    [50, 'SUSPECTED_SWAP', 0.19],
-    [55, 'SUSPECTED_SWAP', 0.18],
-    [60, 'SUSPECTED_SWAP', 0.22],
-    [65, 'SUSPECTED_SWAP', 0.17],
-    [70, 'SUSPECTED_SWAP', 0.20],
+    // [minutes offset, state, similarity] — backend enum values
+    [0,  'STABLE',           0.89],
+    [5,  'STABLE',           0.87],
+    [10, 'STABLE',           0.91],
+    [15, 'STABLE',           0.86],
+    [20, 'STABLE',           0.88],
+    [25, 'STABLE',           0.84],
+    [30, 'STABLE',           0.82],
+    [35, 'DRIFT_SUSPECTED',  0.71],
+    [40, 'DRIFT_SUSPECTED',  0.28],
+    [45, 'DRIFT_SUSPECTED',  0.21],
+    [50, 'SWAP_SUSPECTED',   0.19],
+    [55, 'SWAP_SUSPECTED',   0.18],
+    [60, 'SWAP_SUSPECTED',   0.22],
+    [65, 'SWAP_SUSPECTED',   0.17],
+    [70, 'SWAP_SUSPECTED',   0.20],
   ];
   states.forEach(([mins, state, sim], i) => {
     const ts = new Date(base.getTime() + mins * 60000).toISOString();
@@ -117,7 +135,7 @@ function genViewEvents(): ViewEvent[] {
       camera_id: 'CAM-C-01',
       ts,
       similarity: sim + (Math.random() - 0.5) * 0.02,
-      anchors_found: state === 'SAME_VIEW' ? 8 : state === 'VIEW_DRIFTED' ? 5 : 2,
+      anchors_found: state === 'STABLE' ? 8 : state === 'DRIFT_SUSPECTED' ? 5 : 2,
       anchors_total: 9,
       baseline_ver: 2,
       state: state as any,
@@ -129,7 +147,7 @@ function genViewEvents(): ViewEvent[] {
 
 export const MOCK_VIEW_EVENTS: ViewEvent[] = genViewEvents();
 
-// â”€â”€â”€ Claimed vs Observed (Ghost batch â€” CTR-D) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Claimed vs Observed (Ghost batch — CTR-D) ─────────────────────────────
 
 function genGhostData(): ClaimedVsObservedPoint[] {
   const start = new Date('2026-09-20');
@@ -152,7 +170,7 @@ function genGhostData(): ClaimedVsObservedPoint[] {
   // Make days 3, 7, 11 no-data (edge outage)
   [3, 7, 11].forEach((di) => {
     points[di].observed = null;
-    points[di].status = 'NO-DATA';
+    points[di].status = 'NO_DATA';
     points[di].excluded = true;
     points[di].ratio = null;
   });
@@ -166,21 +184,24 @@ export const MOCK_GHOST_DATA: ClaimedVsObservedPoint[] = genGhostData();
 export const MOCK_GHOST_EVAL: GhostEvaluation = {
   id: 'GE-D-001',
   batch_id: 'BATCH-D-01',
+  centre_id: 'CTR-D',
   evaluated_at: '2026-10-04T07:00:00+05:30',
   window_start: '2026-09-20',
   window_end: '2026-10-04',
-  valid_sessions: 11,
+  eligible_days: 11,
+  ghost_days: 10,
+  nodata_days: 3,
+  untrusted_days: 0,
   ghost_score: 78,
-  status: 'SUSPECTED_GHOST',
-  indicators: {
-    i1_persistent_shortfall: 0.91,
-    i2_near_zero: 0.82,
-    i3_claim_uniformity: 0.95,
-    i4_out_of_schedule: 0.00,
-    i5_room_overlap: 0.10,
-    i6_trend: 0.60,
+  state: 'SUSPECTED_GHOST',
+  explanation: {
+    persistence: 0.91,
+    magnitude: 0.82,
+    consistency: 0.95,
+    evidence_quality: 0.10,
+    cusum_score: 0.60,
   },
-  excluded_sessions: ['SES-D-004', 'SES-D-008', 'SES-D-012'],
+  algorithm_version: 'ghost-v1',
 };
 
 // â”€â”€â”€ Audit Events â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -188,39 +209,39 @@ export const MOCK_GHOST_EVAL: GhostEvaluation = {
 export const MOCK_AUDIT: AuditEvent[] = [
   {
     id: 'AUD-001',
-    entity_type: 'flag',
-    entity_id: 'FLAG-001',
+    resource_type: 'flag',
+    resource_id: 'FLAG-001',
     actor: 'system',
     action: 'flag_opened',
-    ts: '2026-10-04T10:42:00+05:30',
-    note: 'Camera similarity dropped to 0.19 â€” VIEW_MISMATCH state entered.',
+    occurred_at: '2026-10-04T10:42:00+05:30',
+    detail: { note: 'Camera similarity dropped to 0.19 — VIEW_MISMATCH state entered.' },
   },
   {
     id: 'AUD-002',
-    entity_type: 'flag',
-    entity_id: 'FLAG-001',
+    resource_type: 'flag',
+    resource_id: 'FLAG-001',
     actor: 'system',
     action: 'flag_opened',
-    ts: '2026-10-04T10:57:00+05:30',
-    note: 'SUSPECTED_SWAP after 3 consecutive mismatch windows.',
+    occurred_at: '2026-10-04T10:57:00+05:30',
+    detail: { note: 'SUSPECTED_SWAP after 3 consecutive mismatch windows.' },
   },
   {
     id: 'AUD-003',
-    entity_type: 'session',
-    entity_id: 'SES-C-009',
+    resource_type: 'session',
+    resource_id: 'SES-C-009',
     actor: 'system',
     action: 'session_marked_no_data',
-    ts: '2026-10-04T11:00:00+05:30',
-    note: 'Counts excluded â€” evidence compromised by SUSPECTED_SWAP.',
+    occurred_at: '2026-10-04T11:00:00+05:30',
+    detail: { note: 'Counts excluded — evidence compromised by SUSPECTED_SWAP.' },
   },
   {
     id: 'AUD-004',
-    entity_type: 'flag',
-    entity_id: 'FLAG-001',
+    resource_type: 'flag',
+    resource_id: 'FLAG-001',
     actor: 'officer.ravi@msde.gov.in',
     action: 'flag_reviewed',
-    ts: '2026-10-04T14:30:00+05:30',
-    note: 'Flagged for field inspection.',
+    occurred_at: '2026-10-04T14:30:00+05:30',
+    detail: { note: 'Flagged for field inspection.' },
   },
 ];
 
@@ -288,91 +309,87 @@ export const MOCK_THRESHOLDS: ThresholdConfig[] = [
 export const MOCK_FLAGS: Flag[] = [
   {
     id: 'FLAG-001',
-    type: 'CAMERA_SWAP',
+    flag_type: 'INTEGRITY_CHAIN_BREAK',
     status: 'OPEN',
     centre_id: 'CTR-C',
-    centre_name: 'Computer Centre Pune',
-    rule_fired: 'VIEW_MISMATCH persisted â‰¥ 3 windows; 7 of 9 anchors missing',
-    evidence_link: '/camera-integrity/CAM-C-01',
-    created_at: '2026-10-04T10:57:00+05:30',
-    sla_deadline: '2026-10-06T10:57:00+05:30',
-    tc_response: null,
+    session_id: null,
+    zone_id: 'ZONE-C-01',
+    rule_name: 'Camera integrity state mismatch',
+    description: 'Camera similarity dropped to 0.19; 7 of 9 anchors missing',
     severity: 'HIGH',
+    created_at: '2026-10-04T10:57:00+05:30',
   },
   {
     id: 'FLAG-002',
-    type: 'GHOST_BATCH',
+    flag_type: 'GHOST_BATCH',
     status: 'OPEN',
     centre_id: 'CTR-D',
-    centre_name: 'Skill Centre Patna',
-    rule_fired: 'Ghost Score 78/100 â€” I1: 91% sessions below 50%, I3: claim uniformity 0.95 CV',
-    evidence_link: '/ghost-batches/BATCH-D-01',
-    created_at: '2026-10-04T07:00:00+05:30',
-    sla_deadline: '2026-10-07T07:00:00+05:30',
-    tc_response: null,
+    session_id: 'SES-D-001',
+    zone_id: 'ZONE-D-01',
+    rule_name: 'Ghost batch heuristic score',
+    description: 'Ghost Score 78/100 — 91% sessions below 50%, claim uniformity 0.95 CV',
     severity: 'HIGH',
+    created_at: '2026-10-04T07:00:00+05:30',
   },
   {
     id: 'FLAG-003',
-    type: 'OCCUPANCY',
-    status: 'TC_RESPONDED',
+    flag_type: 'ATTENDANCE_RED',
+    status: 'UNDER_REVIEW',
     centre_id: 'CTR-A',
-    centre_name: 'MSDE Skill Lab Delhi',
-    rule_fired: 'Session ratio 0.36 (9 observed / 25 claimed) â€” below RED threshold 0.50, 2 windows',
-    evidence_link: '/sessions/SES-A-004',
-    created_at: '2026-09-28T14:00:00+05:30',
-    sla_deadline: '2026-10-05T14:00:00+05:30',
-    tc_response: 'Several trainees were on a field visit on this day. Attendance marked in system by error.',
+    session_id: 'SES-A-004',
+    zone_id: 'ZONE-A-01',
+    rule_name: 'Low attendance persistency',
+    description: 'Session ratio 0.36 (9 observed / 25 claimed) — below RED threshold 0.50, 2 windows',
     severity: 'MEDIUM',
+    created_at: '2026-09-28T14:00:00+05:30',
   },
   {
     id: 'FLAG-004',
-    type: 'ITEM_ABSENT',
+    flag_type: 'ITEM_ABSENT',
     status: 'OPEN',
     centre_id: 'CTR-B',
-    centre_name: 'Tailoring Hub Jaipur',
-    rule_fired: 'Item class "Industrial Sewing Machine" unseen in 3 unoccluded windows on 2 distinct days',
-    evidence_link: '/centres/CTR-B/infrastructure',
-    created_at: '2026-10-03T11:00:00+05:30',
-    sla_deadline: '2026-10-10T11:00:00+05:30',
-    tc_response: null,
+    session_id: null,
+    zone_id: 'ZONE-B-01',
+    rule_name: 'Mandatory equipment absent',
+    description: 'Item class "Industrial Sewing Machine" unseen in 3 unoccluded windows on 2 distinct days',
     severity: 'MEDIUM',
+    created_at: '2026-10-03T11:00:00+05:30',
   },
 ];
 
 // â”€â”€â”€ Edge devices â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export const MOCK_EDGE_DEVICES: EdgeDevice[] = [
-  { id: 'EDGE-A', centre_id: 'CTR-A', label: 'CTR-A Edge Node', status: 'ONLINE',
-    queue_depth: 0, bytes_sent_today: 432000, last_heartbeat: '2026-10-04T17:02:00+05:30',
-    model_version: 'mock-v1.2.0' },
-  { id: 'EDGE-B', centre_id: 'CTR-B', label: 'CTR-B Edge Node', status: 'DEGRADED',
-    queue_depth: 3, bytes_sent_today: 398000, last_heartbeat: '2026-10-04T16:59:00+05:30',
-    model_version: 'mock-v1.2.0' },
-  { id: 'EDGE-C', centre_id: 'CTR-C', label: 'CTR-C Edge Node', status: 'ONLINE',
-    queue_depth: 0, bytes_sent_today: 415000, last_heartbeat: '2026-10-04T17:01:00+05:30',
-    model_version: 'mock-v1.2.0' },
-  { id: 'EDGE-D', centre_id: 'CTR-D', label: 'CTR-D Edge Node', status: 'ONLINE',
-    queue_depth: 0, bytes_sent_today: 441000, last_heartbeat: '2026-10-04T17:00:00+05:30',
-    model_version: 'mock-v1.2.0' },
-  { id: 'EDGE-E', centre_id: 'CTR-E', label: 'CTR-E Edge Node', status: 'OFFLINE',
-    queue_depth: 4320, bytes_sent_today: 0, last_heartbeat: '2026-10-01T09:00:00+05:30',
-    model_version: 'mock-v1.2.0' },
-  { id: 'EDGE-F', centre_id: 'CTR-F', label: 'CTR-F Edge Node', status: 'ONLINE',
-    queue_depth: 0, bytes_sent_today: 428000, last_heartbeat: '2026-10-04T17:03:00+05:30',
-    model_version: 'mock-v1.2.0' },
+  { id: 'EDGE-A', centre_id: 'CTR-A', serial_number: 'SN-CTR-A-001', status: 'ACTIVE',
+    last_heartbeat_at: '2026-10-04T17:02:00+05:30', last_seen_at: '2026-10-04T17:02:00+05:30',
+    model_version: 'mock-v1.2.0', firmware_version: '1.2.0', last_telemetry: { queue_depth: 0 } },
+  { id: 'EDGE-B', centre_id: 'CTR-B', serial_number: 'SN-CTR-B-001', status: 'SUSPENDED',
+    last_heartbeat_at: '2026-10-04T16:59:00+05:30', last_seen_at: '2026-10-04T16:59:00+05:30',
+    model_version: 'mock-v1.2.0', firmware_version: '1.2.0', last_telemetry: { queue_depth: 3 } },
+  { id: 'EDGE-C', centre_id: 'CTR-C', serial_number: 'SN-CTR-C-001', status: 'ACTIVE',
+    last_heartbeat_at: '2026-10-04T17:01:00+05:30', last_seen_at: '2026-10-04T17:01:00+05:30',
+    model_version: 'mock-v1.2.0', firmware_version: '1.2.0', last_telemetry: { queue_depth: 0 } },
+  { id: 'EDGE-D', centre_id: 'CTR-D', serial_number: 'SN-CTR-D-001', status: 'ACTIVE',
+    last_heartbeat_at: '2026-10-04T17:00:00+05:30', last_seen_at: '2026-10-04T17:00:00+05:30',
+    model_version: 'mock-v1.2.0', firmware_version: '1.2.0', last_telemetry: { queue_depth: 0 } },
+  { id: 'EDGE-E', centre_id: 'CTR-E', serial_number: 'SN-CTR-E-001', status: 'OFFLINE',
+    last_heartbeat_at: '2026-10-01T09:00:00+05:30', last_seen_at: '2026-10-01T09:00:00+05:30',
+    model_version: 'mock-v1.2.0', firmware_version: '1.2.0', last_telemetry: null },
+  { id: 'EDGE-F', centre_id: 'CTR-F', serial_number: 'SN-CTR-F-001', status: 'ACTIVE',
+    last_heartbeat_at: '2026-10-04T17:03:00+05:30', last_seen_at: '2026-10-04T17:03:00+05:30',
+    model_version: 'mock-v1.2.0', firmware_version: '1.2.0', last_telemetry: { queue_depth: 0 } },
 ];
 
 
 // ── MOCK_CAMERAS (added by Phase 1) ──────────────────────────────────
 export const MOCK_CAMERAS: Camera[] = [
-  { id: 'CAM-A-01', centre_id: 'CTR-A', zone_id: 'Z1', label: 'Lab-A Front', model: 'HikVision DS-2CD', mac: 'AA:BB:CC:DD:01:01', current_baseline_ver: 1, view_state: 'SAME_VIEW', last_similarity: 0.91, last_seen: '2026-10-04T17:00:00+05:30', anchors_found: 9, anchors_total: 9 },
-  { id: 'CAM-A-02', centre_id: 'CTR-A', zone_id: 'Z2', label: 'Lab-A Rear', model: 'HikVision DS-2CD', mac: 'AA:BB:CC:DD:01:02', current_baseline_ver: 1, view_state: 'SAME_VIEW', last_similarity: 0.88, last_seen: '2026-10-04T17:00:00+05:30', anchors_found: 8, anchors_total: 9 },
-  { id: 'CAM-B-01', centre_id: 'CTR-B', zone_id: 'Z1', label: 'Tailoring Front', model: 'Dahua IPC-HFW', mac: 'AA:BB:CC:DD:02:01', current_baseline_ver: 2, view_state: 'VIEW_DRIFTED', last_similarity: 0.72, last_seen: '2026-10-04T16:55:00+05:30', anchors_found: 7, anchors_total: 9 },
-  { id: 'CAM-C-01', centre_id: 'CTR-C', zone_id: 'Z1', label: 'Comp-Centre Front', model: 'Axis M3106', mac: 'AA:BB:CC:DD:03:01', current_baseline_ver: 3, view_state: 'SUSPECTED_SWAP', last_similarity: 0.19, last_seen: '2026-10-04T10:42:00+05:30', anchors_found: 2, anchors_total: 9 },
-  { id: 'CAM-D-01', centre_id: 'CTR-D', zone_id: 'Z1', label: 'Skill-Centre Main', model: 'HikVision DS-2CD', mac: 'AA:BB:CC:DD:04:01', current_baseline_ver: 1, view_state: 'SAME_VIEW', last_similarity: 0.87, last_seen: '2026-10-04T17:00:00+05:30', anchors_found: 9, anchors_total: 9 },
-  { id: 'CAM-E-01', centre_id: 'CTR-E', zone_id: 'Z1', label: 'Offline-Centre Main', model: 'Dahua IPC-HFW', mac: 'AA:BB:CC:DD:05:01', current_baseline_ver: 1, view_state: 'UNCERTAIN', last_similarity: null, last_seen: '2026-10-01T09:00:00+05:30', anchors_found: 0, anchors_total: 8 },
-  { id: 'CAM-F-01', centre_id: 'CTR-F', zone_id: 'Z1', label: 'Healthy-Centre Main', model: 'HikVision DS-2CD', mac: 'AA:BB:CC:DD:06:01', current_baseline_ver: 1, view_state: 'SAME_VIEW', last_similarity: 0.94, last_seen: '2026-10-04T17:02:00+05:30', anchors_found: 9, anchors_total: 9 },
+  { id: 'CAM-A-01', centre_id: 'CTR-A', zone_id: 'Z1', label: 'Lab-A Front',        model: 'HikVision DS-2CD', mac: 'AA:BB:CC:DD:01:01', current_baseline_ver: 1, view_state: 'STABLE',          last_similarity: 0.91, last_seen: '2026-10-04T17:00:00+05:30', anchors_found: 9, anchors_total: 9 },
+  { id: 'CAM-A-02', centre_id: 'CTR-A', zone_id: 'Z2', label: 'Lab-A Rear',         model: 'HikVision DS-2CD', mac: 'AA:BB:CC:DD:01:02', current_baseline_ver: 1, view_state: 'STABLE',          last_similarity: 0.88, last_seen: '2026-10-04T17:00:00+05:30', anchors_found: 8, anchors_total: 9 },
+  { id: 'CAM-B-01', centre_id: 'CTR-B', zone_id: 'Z1', label: 'Tailoring Front',    model: 'Dahua IPC-HFW',   mac: 'AA:BB:CC:DD:02:01', current_baseline_ver: 2, view_state: 'DRIFT_SUSPECTED',  last_similarity: 0.72, last_seen: '2026-10-04T16:55:00+05:30', anchors_found: 7, anchors_total: 9 },
+  { id: 'CAM-C-01', centre_id: 'CTR-C', zone_id: 'Z1', label: 'Comp-Centre Front',  model: 'Axis M3106',      mac: 'AA:BB:CC:DD:03:01', current_baseline_ver: 3, view_state: 'SWAP_SUSPECTED',   last_similarity: 0.19, last_seen: '2026-10-04T10:42:00+05:30', anchors_found: 2, anchors_total: 9 },
+  { id: 'CAM-D-01', centre_id: 'CTR-D', zone_id: 'Z1', label: 'Skill-Centre Main',  model: 'HikVision DS-2CD', mac: 'AA:BB:CC:DD:04:01', current_baseline_ver: 1, view_state: 'STABLE',          last_similarity: 0.87, last_seen: '2026-10-04T17:00:00+05:30', anchors_found: 9, anchors_total: 9 },
+  { id: 'CAM-E-01', centre_id: 'CTR-E', zone_id: 'Z1', label: 'Offline-Centre Main', model: 'Dahua IPC-HFW', mac: 'AA:BB:CC:DD:05:01', current_baseline_ver: 1, view_state: 'REBASELINED',       last_similarity: null, last_seen: '2026-10-01T09:00:00+05:30', anchors_found: 0, anchors_total: 8 },
+  { id: 'CAM-F-01', centre_id: 'CTR-F', zone_id: 'Z1', label: 'Healthy-Centre Main', model: 'HikVision DS-2CD', mac: 'AA:BB:CC:DD:06:01', current_baseline_ver: 1, view_state: 'STABLE',         last_similarity: 0.94, last_seen: '2026-10-04T17:02:00+05:30', anchors_found: 9, anchors_total: 9 },
 ];
 
 // ── MOCK_CAMERA_BASELINES ─────────────────────────────────────────────
@@ -386,36 +403,35 @@ export const MOCK_CAMERA_BASELINES: CameraBaseline[] = [
 
 // ── MOCK_CAMERA_VIEW_EVENTS (distinct name from genViewEvents) ────────
 export const MOCK_CAMERA_VIEW_EVENTS: ViewEvent[] = [
-  { id: 'VE-001', camera_id: 'CAM-C-01', ts: '2026-10-04T10:00:00+05:30', similarity: 0.83, anchors_found: 9, anchors_total: 9, baseline_ver: 3, state: 'SAME_VIEW', reason: {} },
-  { id: 'VE-002', camera_id: 'CAM-C-01', ts: '2026-10-04T10:05:00+05:30', similarity: 0.81, anchors_found: 9, anchors_total: 9, baseline_ver: 3, state: 'SAME_VIEW', reason: {} },
-  { id: 'VE-003', camera_id: 'CAM-C-01', ts: '2026-10-04T10:10:00+05:30', similarity: 0.84, anchors_found: 9, anchors_total: 9, baseline_ver: 3, state: 'SAME_VIEW', reason: {} },
-  { id: 'VE-004', camera_id: 'CAM-C-01', ts: '2026-10-04T10:15:00+05:30', similarity: 0.82, anchors_found: 9, anchors_total: 9, baseline_ver: 3, state: 'SAME_VIEW', reason: {} },
-  { id: 'VE-005', camera_id: 'CAM-C-01', ts: '2026-10-04T10:20:00+05:30', similarity: 0.85, anchors_found: 9, anchors_total: 9, baseline_ver: 3, state: 'SAME_VIEW', reason: {} },
-  { id: 'VE-006', camera_id: 'CAM-C-01', ts: '2026-10-04T10:25:00+05:30', similarity: 0.80, anchors_found: 8, anchors_total: 9, baseline_ver: 3, state: 'SAME_VIEW', reason: {} },
-  { id: 'VE-007', camera_id: 'CAM-C-01', ts: '2026-10-04T10:30:00+05:30', similarity: 0.79, anchors_found: 8, anchors_total: 9, baseline_ver: 3, state: 'SAME_VIEW', reason: {} },
-  { id: 'VE-008', camera_id: 'CAM-C-01', ts: '2026-10-04T10:35:00+05:30', similarity: 0.41, anchors_found: 5, anchors_total: 9, baseline_ver: 3, state: 'VIEW_MISMATCH', reason: { trigger: 'sim_drop' } },
-  { id: 'VE-009', camera_id: 'CAM-C-01', ts: '2026-10-04T10:40:00+05:30', similarity: 0.22, anchors_found: 3, anchors_total: 9, baseline_ver: 3, state: 'VIEW_MISMATCH', reason: { trigger: 'sim_drop' } },
-  { id: 'VE-010', camera_id: 'CAM-C-01', ts: '2026-10-04T10:45:00+05:30', similarity: 0.19, anchors_found: 2, anchors_total: 9, baseline_ver: 3, state: 'SUSPECTED_SWAP', reason: { persist: 3 } },
-  { id: 'VE-011', camera_id: 'CAM-C-01', ts: '2026-10-04T10:50:00+05:30', similarity: 0.21, anchors_found: 2, anchors_total: 9, baseline_ver: 3, state: 'SUSPECTED_SWAP', reason: { persist: 4 } },
-  { id: 'VE-012', camera_id: 'CAM-C-01', ts: '2026-10-04T10:55:00+05:30', similarity: 0.18, anchors_found: 2, anchors_total: 9, baseline_ver: 3, state: 'SUSPECTED_SWAP', reason: { persist: 5 } },
-  { id: 'VE-101', camera_id: 'CAM-A-01', ts: '2026-10-04T10:00:00+05:30', similarity: 0.91, anchors_found: 9, anchors_total: 9, baseline_ver: 1, state: 'SAME_VIEW', reason: {} },
-  { id: 'VE-102', camera_id: 'CAM-A-01', ts: '2026-10-04T10:30:00+05:30', similarity: 0.89, anchors_found: 9, anchors_total: 9, baseline_ver: 1, state: 'SAME_VIEW', reason: {} },
+  { id: 'VE-001', camera_id: 'CAM-C-01', ts: '2026-10-04T10:00:00+05:30', similarity: 0.83, anchors_found: 9, anchors_total: 9, baseline_ver: 3, state: 'STABLE',           reason: {} },
+  { id: 'VE-002', camera_id: 'CAM-C-01', ts: '2026-10-04T10:05:00+05:30', similarity: 0.81, anchors_found: 9, anchors_total: 9, baseline_ver: 3, state: 'STABLE',           reason: {} },
+  { id: 'VE-003', camera_id: 'CAM-C-01', ts: '2026-10-04T10:10:00+05:30', similarity: 0.84, anchors_found: 9, anchors_total: 9, baseline_ver: 3, state: 'STABLE',           reason: {} },
+  { id: 'VE-004', camera_id: 'CAM-C-01', ts: '2026-10-04T10:15:00+05:30', similarity: 0.82, anchors_found: 9, anchors_total: 9, baseline_ver: 3, state: 'STABLE',           reason: {} },
+  { id: 'VE-005', camera_id: 'CAM-C-01', ts: '2026-10-04T10:20:00+05:30', similarity: 0.85, anchors_found: 9, anchors_total: 9, baseline_ver: 3, state: 'STABLE',           reason: {} },
+  { id: 'VE-006', camera_id: 'CAM-C-01', ts: '2026-10-04T10:25:00+05:30', similarity: 0.80, anchors_found: 8, anchors_total: 9, baseline_ver: 3, state: 'STABLE',           reason: {} },
+  { id: 'VE-007', camera_id: 'CAM-C-01', ts: '2026-10-04T10:30:00+05:30', similarity: 0.79, anchors_found: 8, anchors_total: 9, baseline_ver: 3, state: 'STABLE',           reason: {} },
+  { id: 'VE-008', camera_id: 'CAM-C-01', ts: '2026-10-04T10:35:00+05:30', similarity: 0.41, anchors_found: 5, anchors_total: 9, baseline_ver: 3, state: 'DRIFT_SUSPECTED',  reason: { trigger: 'sim_drop' } },
+  { id: 'VE-009', camera_id: 'CAM-C-01', ts: '2026-10-04T10:40:00+05:30', similarity: 0.22, anchors_found: 3, anchors_total: 9, baseline_ver: 3, state: 'DRIFT_SUSPECTED',  reason: { trigger: 'sim_drop' } },
+  { id: 'VE-010', camera_id: 'CAM-C-01', ts: '2026-10-04T10:45:00+05:30', similarity: 0.19, anchors_found: 2, anchors_total: 9, baseline_ver: 3, state: 'SWAP_SUSPECTED',   reason: { persist: 3 } },
+  { id: 'VE-011', camera_id: 'CAM-C-01', ts: '2026-10-04T10:50:00+05:30', similarity: 0.21, anchors_found: 2, anchors_total: 9, baseline_ver: 3, state: 'SWAP_SUSPECTED',   reason: { persist: 4 } },
+  { id: 'VE-012', camera_id: 'CAM-C-01', ts: '2026-10-04T10:55:00+05:30', similarity: 0.18, anchors_found: 2, anchors_total: 9, baseline_ver: 3, state: 'SWAP_SUSPECTED',   reason: { persist: 5 } },
+  { id: 'VE-101', camera_id: 'CAM-A-01', ts: '2026-10-04T10:00:00+05:30', similarity: 0.91, anchors_found: 9, anchors_total: 9, baseline_ver: 1, state: 'STABLE',           reason: {} },
+  { id: 'VE-102', camera_id: 'CAM-A-01', ts: '2026-10-04T10:30:00+05:30', similarity: 0.89, anchors_found: 9, anchors_total: 9, baseline_ver: 1, state: 'STABLE',           reason: {} },
 ];
 
 // ── MOCK_BATCHES ──────────────────────────────────────────────────────
 export const MOCK_BATCHES: Batch[] = [
-  { id: 'BATCH-A-01', centre_id: 'CTR-A', trade: 'Computer Hardware', scheme: 'PMKVY', start_date: '2026-09-15', end_date: '2026-11-15', ghost_status: 'CLEAR', ghost_score: 5 },
-  { id: 'BATCH-D-01', centre_id: 'CTR-D', trade: 'Solar Panel Installation', scheme: 'PMKVY', start_date: '2026-09-10', end_date: '2026-11-10', ghost_status: 'SUSPECTED_GHOST', ghost_score: 78 },
-  { id: 'BATCH-D-02', centre_id: 'CTR-D', trade: 'Electrician', scheme: 'PMKVY', start_date: '2026-09-05', end_date: '2026-11-05', ghost_status: 'WATCH', ghost_score: 38 },
-  { id: 'BATCH-F-01', centre_id: 'CTR-F', trade: 'Healthcare Assistant', scheme: 'PMKVY', start_date: '2026-09-12', end_date: '2026-11-12', ghost_status: 'CLEAR', ghost_score: 4 },
-  { id: 'BATCH-B-01', centre_id: 'CTR-B', trade: 'Tailoring & Garment Making', scheme: 'DDUGKY', start_date: '2026-09-18', end_date: '2026-11-18', ghost_status: 'CLEAR', ghost_score: 8 },
+  { id: 'BATCH-A-01', centre_id: 'CTR-A', trade: 'Computer Hardware',       scheme: 'PMKVY',  start_date: '2026-09-15', end_date: '2026-11-15', ghost_state: 'NORMAL',         ghost_score: 5  },
+  { id: 'BATCH-D-01', centre_id: 'CTR-D', trade: 'Solar Panel Installation', scheme: 'PMKVY',  start_date: '2026-09-10', end_date: '2026-11-10', ghost_state: 'SUSPECTED_GHOST', ghost_score: 78 },
+  { id: 'BATCH-D-02', centre_id: 'CTR-D', trade: 'Electrician',              scheme: 'PMKVY',  start_date: '2026-09-05', end_date: '2026-11-05', ghost_state: 'WATCH',           ghost_score: 38 },
+  { id: 'BATCH-F-01', centre_id: 'CTR-F', trade: 'Healthcare Assistant',     scheme: 'PMKVY',  start_date: '2026-09-12', end_date: '2026-11-12', ghost_state: 'NORMAL',         ghost_score: 4  },
+  { id: 'BATCH-B-01', centre_id: 'CTR-B', trade: 'Tailoring & Garment Making', scheme: 'DDUGKY', start_date: '2026-09-18', end_date: '2026-11-18', ghost_state: 'NORMAL',        ghost_score: 8  },
 ];
 
 // ── MOCK_GHOST_EVALUATIONS ────────────────────────────────────────────
 export const MOCK_GHOST_EVALUATIONS: GhostEvaluation[] = [
-  { id: 'GEVAL-001', batch_id: 'BATCH-D-01', evaluated_at: '2026-10-04T07:00:00+05:30', window_start: '2026-09-20T00:00:00+05:30', window_end: '2026-10-04T00:00:00+05:30', valid_sessions: 9, ghost_score: 78, status: 'SUSPECTED_GHOST', indicators: { i1_persistent_shortfall: 0.91, i2_near_zero: 0.78, i3_claim_uniformity: 0.95, i4_out_of_schedule: 0.10, i5_room_overlap: 0.00, i6_trend: 0.60 }, excluded_sessions: ['SES-D-007'] },
-  { id: 'GEVAL-002', batch_id: 'BATCH-D-02', evaluated_at: '2026-10-04T07:00:00+05:30', window_start: '2026-09-20T00:00:00+05:30', window_end: '2026-10-04T00:00:00+05:30', valid_sessions: 6, ghost_score: 38, status: 'WATCH', indicators: { i1_persistent_shortfall: 0.50, i2_near_zero: 0.20, i3_claim_uniformity: 0.40, i4_out_of_schedule: 0.05, i5_room_overlap: 0.00, i6_trend: 0.30 }, excluded_sessions: [] },
-  { id: 'GEVAL-003', batch_id: 'BATCH-A-01', evaluated_at: '2026-10-04T07:00:00+05:30', window_start: '2026-09-20T00:00:00+05:30', window_end: '2026-10-04T00:00:00+05:30', valid_sessions: 8, ghost_score: 5, status: 'CLEAR', indicators: { i1_persistent_shortfall: 0.00, i2_near_zero: 0.00, i3_claim_uniformity: 0.08, i4_out_of_schedule: 0.02, i5_room_overlap: 0.00, i6_trend: 0.05 }, excluded_sessions: [] },
-  { id: 'GEVAL-004', batch_id: 'BATCH-F-01', evaluated_at: '2026-10-04T07:00:00+05:30', window_start: '2026-09-20T00:00:00+05:30', window_end: '2026-10-04T00:00:00+05:30', valid_sessions: 7, ghost_score: 4, status: 'CLEAR', indicators: { i1_persistent_shortfall: 0.00, i2_near_zero: 0.00, i3_claim_uniformity: 0.06, i4_out_of_schedule: 0.00, i5_room_overlap: 0.00, i6_trend: 0.04 }, excluded_sessions: [] },
+  { id: 'GEVAL-001', batch_id: 'BATCH-D-01', centre_id: 'CTR-D', evaluated_at: '2026-10-04T07:00:00+05:30', window_start: '2026-09-20T00:00:00+05:30', window_end: '2026-10-04T00:00:00+05:30', eligible_days: 9, ghost_days: 8, nodata_days: 1, untrusted_days: 0, ghost_score: 78, state: 'SUSPECTED_GHOST', explanation: { persistence: 0.91, magnitude: 0.78, consistency: 0.95, evidence_quality: 0.10, cusum_score: 0.60 }, algorithm_version: 'ghost-v1' },
+  { id: 'GEVAL-002', batch_id: 'BATCH-D-02', centre_id: 'CTR-D', evaluated_at: '2026-10-04T07:00:00+05:30', window_start: '2026-09-20T00:00:00+05:30', window_end: '2026-10-04T00:00:00+05:30', eligible_days: 6, ghost_days: 3, nodata_days: 0, untrusted_days: 0, ghost_score: 38, state: 'WATCH',           explanation: { persistence: 0.50, magnitude: 0.20, consistency: 0.40, evidence_quality: 0.05, cusum_score: 0.30 }, algorithm_version: 'ghost-v1' },
+  { id: 'GEVAL-003', batch_id: 'BATCH-A-01', centre_id: 'CTR-A', evaluated_at: '2026-10-04T07:00:00+05:30', window_start: '2026-09-20T00:00:00+05:30', window_end: '2026-10-04T00:00:00+05:30', eligible_days: 8, ghost_days: 0, nodata_days: 0, untrusted_days: 0, ghost_score: 5,  state: 'NORMAL',         explanation: { persistence: 0.00, magnitude: 0.00, consistency: 0.08, evidence_quality: 0.02, cusum_score: 0.05 }, algorithm_version: 'ghost-v1' },
+  { id: 'GEVAL-004', batch_id: 'BATCH-F-01', centre_id: 'CTR-F', evaluated_at: '2026-10-04T07:00:00+05:30', window_start: '2026-09-20T00:00:00+05:30', window_end: '2026-10-04T00:00:00+05:30', eligible_days: 7, ghost_days: 0, nodata_days: 0, untrusted_days: 0, ghost_score: 4,  state: 'NORMAL',         explanation: { persistence: 0.00, magnitude: 0.00, consistency: 0.06, evidence_quality: 0.00, cusum_score: 0.04 }, algorithm_version: 'ghost-v1' },
 ];
-// phase1 ok

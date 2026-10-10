@@ -4,30 +4,15 @@ import {
   LayoutDashboard, MapPin, Flag, Camera, Ghost,
   Activity, Settings, BookOpen, Shield, ChevronLeft, ChevronRight,
 } from 'lucide-react';
-
-const NAV_ITEMS = [
-  { label: 'Overview',          labelHi: 'अवलोकन',            labelMr: 'आढावा',             href: '/',                icon: LayoutDashboard, badge: 0    },
-  { label: 'Centres & Map',     labelHi: 'केंद्र और मानचित्र', labelMr: 'केंद्रे व नकाशा',   href: '/centres',         icon: MapPin,          badge: 0    },
-  { label: 'Flags & Cases',     labelHi: 'सूचनाएं और प्रकरण', labelMr: 'सूचना व प्रकरणे',  href: '/flags',           icon: Flag,            badge: 4    },
-  { label: 'Camera Integrity',  labelHi: 'कैमरा विश्वसनीयता', labelMr: 'कॅमेरा विश्वासार्हता', href: '/camera-integrity', icon: Camera,        badge: 1    },
-  { label: 'Ghost Batches',     labelHi: 'संदिग्ध बैच',       labelMr: 'संशयित कागदोपत्री तुकडी', href: '/ghost-batches', icon: Ghost,       badge: 1    },
-  { label: 'Edge Console',      labelHi: 'एज कंसोल',          labelMr: 'एज कन्सोल',         href: '/edge-console',    icon: Activity,        badge: 0    },
-  { label: 'Settings',          labelHi: 'सेटिंग्स',           labelMr: 'सेटिंग्ज',          href: '/settings',        icon: Settings,        badge: 0    },
-  { label: 'Audit Log',         labelHi: 'ऑडिट लॉग',          labelMr: 'ऑडिट नोंद',         href: '/audit-log',       icon: BookOpen,        badge: 0    },
-  { label: 'Accuracy & Limits', labelHi: 'सटीकता और सीमाएं', labelMr: 'अचूकता व मर्यादा',  href: '/accuracy',        icon: Shield,          badge: 0    },
-];
+import { useFlags } from '@/hooks/useFlags';
+import { useCameras } from '@/hooks/useCameras';
+import { useGhostAssessments } from '@/hooks/useGhost';
 
 interface NavRailProps {
   collapsed: boolean;
   onToggle: () => void;
   lang: 'en' | 'hi' | 'mr';
   role: string;
-}
-
-function getLabel(item: typeof NAV_ITEMS[0], lang: string) {
-  if (lang === 'hi') return item.labelHi;
-  if (lang === 'mr') return item.labelMr;
-  return item.label;
 }
 
 const ROLE_LABELS: Record<string, string> = {
@@ -38,6 +23,37 @@ const ROLE_LABELS: Record<string, string> = {
 };
 
 export function NavRail({ collapsed, onToggle, lang, role }: NavRailProps) {
+  const { data: flagsData } = useFlags({ status: 'OPEN', limit: 200 });
+  const { data: camerasData } = useCameras({ limit: 100 });
+  const { data: ghostData } = useGhostAssessments({ limit: 100 });
+
+  const openFlagsCount = flagsData?.items.length ?? 0;
+  const cameraIntegrityIssuesCount = (camerasData?.items ?? []).filter(c => {
+    const st = (c as any).current_state || c.view_state;
+    return ['SWAP_SUSPECTED', 'SUSPECTED_SWAP', 'DRIFT_SUSPECTED'].includes(st);
+  }).length;
+  const ghostCount = (ghostData?.items ?? []).filter(g =>
+    ['SUSPECTED_GHOST', 'WATCH'].includes(g.state)
+  ).length;
+
+  const NAV_ITEMS = [
+    { label: 'Overview',          labelHi: 'अवलोकन',            labelMr: 'आढावा',             href: '/',                icon: LayoutDashboard, badge: 0 },
+    { label: 'Centres & Map',     labelHi: 'केंद्र और मानचित्र', labelMr: 'केंद्रे व नकाशा',   href: '/centres',         icon: MapPin,          badge: 0 },
+    { label: 'Flags & Cases',     labelHi: 'सूचनाएं और प्रकरण', labelMr: 'सूचना व प्रकरणे',  href: '/flags',           icon: Flag,            badge: openFlagsCount },
+    { label: 'Camera Integrity',  labelHi: 'कैमरा विश्वसनीयता', labelMr: 'कॅमेरा विश्वासार्हता', href: '/camera-integrity', icon: Camera,        badge: cameraIntegrityIssuesCount },
+    { label: 'Ghost Batches',     labelHi: 'संदिग्ध बैच',       labelMr: 'संशयित कागदोपत्री तुकडी', href: '/ghost-batches', icon: Ghost,       badge: ghostCount },
+    { label: 'Edge Console',      labelHi: 'एज कंसोल',          labelMr: 'एज कन्सोल',         href: '/edge-console',    icon: Activity,        badge: 0 },
+    { label: 'Settings',          labelHi: 'सेटिंग्स',           labelMr: 'सेटिंग्ज',          href: '/settings',        icon: Settings,        badge: 0 },
+    { label: 'Audit Log',         labelHi: 'ऑडिट लॉग',          labelMr: 'ऑडिट नोंद',         href: '/audit-log',       icon: BookOpen,        badge: 0 },
+    { label: 'Accuracy & Limits', labelHi: 'सटीकता और सीमाएं', labelMr: 'अचूकता व मर्यादा',  href: '/accuracy',        icon: Shield,          badge: 0 },
+  ];
+
+  function getLabel(item: typeof NAV_ITEMS[0], langStr: string) {
+    if (langStr === 'hi') return item.labelHi;
+    if (langStr === 'mr') return item.labelMr;
+    return item.label;
+  }
+
   return (
     <nav
       className="nav-rail"
@@ -145,7 +161,7 @@ export function NavRail({ collapsed, onToggle, lang, role }: NavRailProps) {
               <p className="text-xs font-medium truncate" style={{ color: 'var(--text-secondary)' }}>
                 {ROLE_LABELS[role] ?? role}
               </p>
-              <p className="text-[10px]" style={{ color: 'var(--text-disabled)' }}>Demo mode</p>
+              <p className="text-[10px]" style={{ color: 'var(--text-disabled)' }}>Authenticated</p>
             </div>
           </div>
         </div>

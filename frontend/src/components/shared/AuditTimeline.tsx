@@ -49,13 +49,13 @@ export function AuditTimeline({ events, className, maxItems }: AuditTimelineProp
               <div className="flex items-baseline gap-2 flex-wrap">
                 <span className="text-sm font-medium text-slate-800">{event.action.replace(/_/g, ' ')}</span>
                 <span className="text-xs text-slate-400 font-mono">
-                  {formatDateTime(event.ts)}
+                  {formatDateTime(event.occurred_at)}
                 </span>
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
                 by{' '}
                 <span className="font-medium text-slate-600">{event.actor}</span>
-                {event.note && <> · {event.note}</>}
+                {event.detail?.note ? <> · {String(event.detail.note)}</> : null}
               </p>
             </div>
           </li>

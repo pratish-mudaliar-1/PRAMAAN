@@ -13,7 +13,6 @@ export function AccuracyLimitsPage() {
             Honesty about what this system can and cannot do
           </p>
         </div>
-        <span className="simulated-badge">SIMULATED DATA</span>
       </div>
 
       {/* Accuracy banner */}

@@ -135,18 +135,18 @@ export function ComponentGallery() {
               ))}
             </Row>
             <Row label="Camera view states — MD">
-              {['SAME_VIEW','VIEW_DRIFTED','VIEW_MISMATCH','SUSPECTED_SWAP',
-                'SWAP_CONFIRMED','REBASELINE_PENDING'].map((s) => (
+              {['STABLE','DRIFT_SUSPECTED','SWAP_SUSPECTED',
+                'SWAP_CONFIRMED','MOVED_CONFIRMED','REBASELINED'].map((s) => (
                 <StatusChip key={s} status={s} size="md" />
               ))}
             </Row>
             <Row label="Ghost statuses — LG">
-              {['CLEAR','WATCH','SUSPECTED_GHOST','ESCALATED'].map((s) => (
+              {['NORMAL','WATCH','SUSPECTED_GHOST','ESCALATED','RESOLVED'].map((s) => (
                 <StatusChip key={s} status={s} size="lg" />
               ))}
             </Row>
             <Row label="Icon only (SM)">
-              {['GREEN','AMBER','RED','NO-DATA','PENDING','UNCERTAIN'].map((s) => (
+              {['GREEN','AMBER','RED','NO_DATA','PENDING'].map((s) => (
                 <StatusChip key={s} status={s} size="sm" showLabel={false} />
               ))}
             </Row>
@@ -396,7 +396,7 @@ export function ComponentGallery() {
           {/* 17. ScoreBreakdownBars */}
           <Section title="ScoreBreakdownBars" id="score-bars">
             <ScoreBreakdownBars
-              indicators={MOCK_GHOST_EVAL.indicators}
+              explanation={MOCK_GHOST_EVAL.explanation}
               ghostScore={MOCK_GHOST_EVAL.ghost_score}
             />
           </Section>

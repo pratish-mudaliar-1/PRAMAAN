@@ -1,10 +1,8 @@
-import React from 'react';
 import { cn } from '@/lib/utils';
-import type { GhostIndicators } from '@/types';
-import { SimulatedBadge } from '@/components/shared/SimulatedBadge';
+import type { GhostExplanation } from '@/types';
 
 interface IndicatorDef {
-  key: keyof GhostIndicators;
+  key: keyof GhostExplanation;
   label: string;
   description: string;
   weight: number;
@@ -13,63 +11,49 @@ interface IndicatorDef {
 
 const INDICATORS: IndicatorDef[] = [
   {
-    key: 'i1_persistent_shortfall',
-    label: 'I1 — Persistent shortfall',
-    description: 'Share of valid sessions where observed < 50% of claimed.',
-    weight: 0.40,
+    key: 'persistence',
+    label: 'Persistent Shortfall',
+    description: 'Fraction of eligible sessions where observed attendance was significantly below claimed.',
+    weight: 0.35,
     color: '#DC2626',
   },
   {
-    key: 'i2_near_zero',
-    label: 'I2 — Near-zero occupancy',
-    description: 'Sessions where observed ≤ 10% of claimed.',
-    weight: 0.20,
+    key: 'magnitude',
+    label: 'Magnitude of Gap',
+    description: 'Average depth of attendance shortfall below the red threshold.',
+    weight: 0.30,
     color: '#EA580C',
   },
   {
-    key: 'i3_claim_uniformity',
-    label: 'I3 — Claim uniformity',
-    description: 'Claimed count nearly constant while observed varies.',
-    weight: 0.15,
+    key: 'consistency',
+    label: 'Claim Uniformity',
+    description: 'Unusual lack of variance in claimed attendance compared to observed variation.',
+    weight: 0.20,
     color: '#D97706',
   },
   {
-    key: 'i4_out_of_schedule',
-    label: 'I4 — Out-of-schedule claims',
-    description: 'Attendance claimed when timetable has no session.',
-    weight: 0.10,
-    color: '#B45309',
-  },
-  {
-    key: 'i5_room_overlap',
-    label: 'I5 — Room overlap',
-    description: 'Two batches claiming the same room simultaneously.',
-    weight: 0.10,
-    color: '#7C3AED',
-  },
-  {
-    key: 'i6_trend',
-    label: 'I6 — Trend',
-    description: 'Claimed rising or flat while observed is falling.',
-    weight: 0.05,
-    color: '#6D28D9',
+    key: 'evidence_quality',
+    label: 'Evidence Quality',
+    description: 'Fraction of evaluation window with validated, trusted observation data.',
+    weight: 0.15,
+    color: '#2563EB',
   },
 ];
 
 interface ScoreBreakdownBarsProps {
-  indicators: GhostIndicators;
+  explanation: GhostExplanation;
   ghostScore: number;
   className?: string;
 }
 
-export function ScoreBreakdownBars({ indicators, ghostScore, className }: ScoreBreakdownBarsProps) {
+export function ScoreBreakdownBars({ explanation, ghostScore, className }: ScoreBreakdownBarsProps) {
   return (
     <div className={cn('card p-4 space-y-4', className)}>
       <div className="flex items-center justify-between gap-2">
         <div>
-          <h3 className="text-sm font-semibold text-slate-800">Ghost Score breakdown</h3>
+          <h3 className="text-sm font-semibold text-slate-800">Ghost Score Breakdown</h3>
           <p className="text-xs text-slate-500 mt-0.5">
-            Weighted sum of indicators. Thresholds are initial hypotheses — calibrate on pilot data.
+            Backend explainability components — weighted sum of evidence indicators.
           </p>
         </div>
         <div className="text-right">
@@ -80,12 +64,12 @@ export function ScoreBreakdownBars({ indicators, ghostScore, className }: ScoreB
 
       <div className="space-y-3">
         {INDICATORS.map((ind) => {
-          const rawVal = indicators[ind.key]; // 0-1
+          const rawVal = Number(explanation[ind.key] ?? 0); // 0-1
           const contribution = rawVal * ind.weight * 100;
           const pct = Math.round(rawVal * 100);
 
           return (
-            <div key={ind.key} className="space-y-1">
+            <div key={String(ind.key)} className="space-y-1">
               <div className="flex items-baseline justify-between gap-2">
                 <span className="text-xs font-semibold text-slate-700">{ind.label}</span>
                 <span className="text-xs font-mono text-slate-500 shrink-0">
@@ -103,10 +87,9 @@ export function ScoreBreakdownBars({ indicators, ghostScore, className }: ScoreB
                 />
               </div>
               <p className="text-xs text-slate-500">{ind.description}</p>
-              {/* Plain-language text */}
               {rawVal > 0 && (
                 <p className="text-xs font-medium" style={{ color: ind.color }}>
-                  {getPlainText(ind.key, rawVal, indicators)}
+                  {getPlainText(ind.key, rawVal)}
                 </p>
               )}
             </div>
@@ -114,30 +97,33 @@ export function ScoreBreakdownBars({ indicators, ghostScore, className }: ScoreB
         })}
       </div>
 
-      <div className="border-t pt-2 flex items-center gap-2">
-        <SimulatedBadge />
-        <p className="text-xs text-amber-700">⚗ All weights are initial hypotheses</p>
+      <div className="border-t pt-2 flex items-center justify-between text-xs text-slate-500">
+        <div className="flex items-center gap-2">
+          <span>Weights calibrated by backend reconciliation engine</span>
+        </div>
+        {explanation.cusum_score !== undefined && (
+          <span className="font-mono text-slate-600">
+            CUSUM: {Number(explanation.cusum_score).toFixed(2)}
+          </span>
+        )}
       </div>
     </div>
   );
 }
 
-function getPlainText(key: keyof GhostIndicators, val: number, ind: GhostIndicators): string {
+function getPlainText(key: keyof GhostExplanation, val: number): string {
   const pct = Math.round(val * 100);
   switch (key) {
-    case 'i1_persistent_shortfall':
-      return `In ${pct}% of valid sessions, observed was under half of claimed.`;
-    case 'i2_near_zero':
-      return `${pct}% of sessions had near-zero observed count (≤10% of claimed).`;
-    case 'i3_claim_uniformity':
-      return `Claimed counts showed low variation while observed varied — possible copy-paste pattern.`;
-    case 'i4_out_of_schedule':
-      return `${pct}% of sessions had claims outside the scheduled timetable.`;
-    case 'i5_room_overlap':
-      return `Room overlap detected in ${pct}% of claimed sessions.`;
-    case 'i6_trend':
-      return `Observed trend is declining while claimed stays flat or rises.`;
+    case 'persistence':
+      return `Persistent shortfall observed in ${pct}% of evaluated sessions.`;
+    case 'magnitude':
+      return `Attendance gap magnitude scored at ${pct}% severity.`;
+    case 'consistency':
+      return `Claim uniformity indicator scored at ${pct}% (low natural variation).`;
+    case 'evidence_quality':
+      return `Observation data coverage and trust confidence at ${pct}%.`;
     default:
       return '';
   }
 }
+

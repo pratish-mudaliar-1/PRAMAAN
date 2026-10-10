@@ -1,6 +1,4 @@
-import React from 'react';
 import { cn } from '@/lib/utils';
-import { SimulatedBadge } from '@/components/shared/SimulatedBadge';
 import type { ClaimedVsObservedPoint, SessionStatus } from '@/types';
 
 interface SessionHeatmapProps {
@@ -13,7 +11,7 @@ type CellStatus = SessionStatus | 'EXCLUDED' | 'EMPTY';
 
 function getRatioStatus(ratio: number | null, excluded: boolean): CellStatus {
   if (excluded) return 'EXCLUDED';
-  if (ratio === null) return 'NO-DATA';
+  if (ratio === null) return 'NO_DATA';
   if (ratio >= 0.8) return 'GREEN';
   if (ratio >= 0.5) return 'AMBER';
   return 'RED';
@@ -23,19 +21,17 @@ const CELL_STYLES: Record<string, string> = {
   GREEN:      'bg-[#ECFDF5] text-[#065F46]',
   AMBER:      'bg-[#FFFBEB] text-[#92400E]',
   RED:        'bg-[#FEF2F2] text-[#991B1B]',
+  NO_DATA:    'bg-[#F3F4F6] text-[#9CA3AF] pattern-hatch',
   'NO-DATA':  'bg-[#F3F4F6] text-[#9CA3AF] pattern-hatch',
   PENDING:    'bg-[#EEF2FF] text-[#3730A3]',
-  UNCERTAIN:  'bg-[#F5F3FF] text-[#7C3AED]',
   EXCLUDED:   'bg-orange-50 text-orange-400 opacity-60',
   EMPTY:      'bg-slate-50 text-slate-300',
-  EVIDENCE_COMPROMISED: 'bg-[#FFF7ED] text-[#C2410C]',
 };
 
 const CELL_ICONS: Record<string, string> = {
   GREEN: '✓', AMBER: '~', RED: '✗',
-  'NO-DATA': '—', PENDING: '◌', UNCERTAIN: '?',
+  NO_DATA: '—', 'NO-DATA': '—', PENDING: '◌',
   EXCLUDED: '⊘', EMPTY: '',
-  EVIDENCE_COMPROMISED: '⚡',
 };
 
 interface HeatmapCell {
@@ -72,7 +68,6 @@ export function SessionHeatmap({ data, sessions = ['AM', 'PM'], className }: Ses
     <div className={cn('card p-4 space-y-3', className)}>
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-sm font-semibold text-slate-800">Session status calendar</h3>
-        <SimulatedBadge />
       </div>
 
       {/* Legend */}

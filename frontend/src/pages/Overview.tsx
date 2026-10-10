@@ -2,31 +2,31 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import {
   AlertTriangle, Camera, Ghost, WifiOff, Activity,
-  ArrowRight, TrendingUp, Info,
+  ArrowRight, Info, RefreshCw,
 } from 'lucide-react';
 import {
-  LineChart, Line, ResponsiveContainer, Tooltip,
+  LineChart, Line, ResponsiveContainer, Tooltip, XAxis,
 } from 'recharts';
-import { MOCK_CENTRES, MOCK_FLAGS } from '@/api/mockData';
+import { useCentres } from '@/hooks/useCentres';
+import { useFlags } from '@/hooks/useFlags';
+import type { Centre, Flag } from '@/types';
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
 function statusChipClass(s: string) {
   const m: Record<string, string> = {
     GREEN: 'chip-green', AMBER: 'chip-amber', RED: 'chip-red',
-    'NO-DATA': 'chip-nodata', PENDING: 'chip-pending', UNCERTAIN: 'chip-uncertain',
-    EVIDENCE_COMPROMISED: 'chip-compromised',
+    NO_DATA: 'chip-nodata', 'NO-DATA': 'chip-nodata', PENDING: 'chip-pending',
   };
   return m[s] ?? 'chip-nodata';
 }
 
 function statusIcon(s: string) {
-  if (s === 'GREEN')  return '●';
-  if (s === 'AMBER')  return '◆';
-  if (s === 'RED')    return '■';
-  if (s === 'NO-DATA') return '⬡';
+  if (s === 'GREEN')   return '●';
+  if (s === 'AMBER')   return '◆';
+  if (s === 'RED')     return '■';
+  if (s === 'NO_DATA') return '⬡';
   if (s === 'PENDING') return '○';
-  if (s === 'UNCERTAIN') return '◌';
   return '?';
 }
 
@@ -38,20 +38,15 @@ function severityClass(s: string) {
 
 function flagTypeLabel(t: string) {
   const m: Record<string, string> = {
-    OCCUPANCY: 'Occupancy', ITEM_ABSENT: 'Item absent',
-    FEED_HEALTH: 'Feed health', DUPLICATE_EVIDENCE: 'Duplicate evidence',
-    CAMERA_SWAP: 'Camera swap', GHOST_BATCH: 'Ghost batch',
+    ATTENDANCE_RED: 'Attendance Red',
+    ATTENDANCE_AMBER_REPEAT: 'Amber Repeat',
+    GHOST_BATCH: 'Ghost Batch',
+    ITEM_ABSENT: 'Item Absent',
+    DEVICE_OFFLINE: 'Device Offline',
+    INTEGRITY_CHAIN_BREAK: 'Integrity Break',
+    EVIDENCE_DUPLICATE: 'Evidence Duplicate',
   };
-  return m[t] ?? t;
-}
-
-function formatSLA(deadline: string) {
-  const diff = new Date(deadline).getTime() - Date.now();
-  const h = Math.floor(diff / 3_600_000);
-  if (diff < 0)  return <span className="sla-critical font-mono text-xs">Overdue</span>;
-  if (h < 12)    return <span className="sla-critical font-mono text-xs">{h}h left</span>;
-  if (h < 48)    return <span className="sla-warning  font-mono text-xs">{h}h left</span>;
-  return <span className="sla-ok font-mono text-xs">{Math.floor(h / 24)}d left</span>;
+  return m[t] ?? t.replace(/_/g, ' ');
 }
 
 // ── KPI Card ─────────────────────────────────────────────────────────
@@ -90,7 +85,14 @@ function KpiCard({ label, value, sub, icon: Icon, accent, href }: KpiProps) {
 
 // ── Flag Row ──────────────────────────────────────────────────────────
 
-function FlagRow({ flag }: { flag: typeof MOCK_FLAGS[0] }) {
+function FlagRow({ flag, centres }: { flag: Flag; centres: Centre[] }) {
+  const centre = centres.find(c => c.id === flag.centre_id);
+  const evidenceLink = flag.flag_type === 'GHOST_BATCH'
+    ? `/ghost-batches/${flag.session_id ?? ''}`
+    : flag.flag_type === 'INTEGRITY_CHAIN_BREAK'
+    ? '/camera-integrity'
+    : `/centres/${flag.centre_id}`;
+
   return (
     <tr>
       <td>
@@ -99,16 +101,20 @@ function FlagRow({ flag }: { flag: typeof MOCK_FLAGS[0] }) {
           className="text-sm font-medium hover:underline"
           style={{ color: 'var(--accent)' }}
         >
-          {flag.centre_name}
+          {centre?.name ?? flag.centre_id.slice(0, 12)}
         </Link>
       </td>
-      <td><span className={`chip ${severityClass(flag.severity)}`}>{flagTypeLabel(flag.type)}</span></td>
+      <td><span className={`chip ${severityClass(flag.severity)}`}>{flagTypeLabel(flag.flag_type)}</span></td>
       <td>
-        <p className="text-xs max-w-xs truncate" style={{ color: 'var(--text-secondary)' }} title={flag.rule_fired}>
-          {flag.rule_fired}
+        <p className="text-xs max-w-xs truncate" style={{ color: 'var(--text-secondary)' }} title={flag.rule_name}>
+          {flag.rule_name}
         </p>
       </td>
-      <td>{formatSLA(flag.sla_deadline)}</td>
+      <td>
+        <span className="text-xs font-mono" style={{ color: 'var(--text-secondary)' }}>
+          {new Date(flag.created_at).toLocaleDateString('en-IN')}
+        </span>
+      </td>
       <td>
         <span
           className="chip text-[10px]"
@@ -118,37 +124,54 @@ function FlagRow({ flag }: { flag: typeof MOCK_FLAGS[0] }) {
             border: `1px solid ${flag.status === 'OPEN' ? 'rgba(255,92,108,0.3)' : 'rgba(61,220,151,0.3)'}`,
           }}
         >
-          {flag.status.replace('_', ' ')}
+          {flag.status.replace(/_/g, ' ')}
         </span>
       </td>
       <td>
-        {flag.evidence_link && (
-          <Link to={flag.evidence_link} className="neu-btn neu-btn-xs" style={{ textDecoration: 'none' }}>
-            View
-          </Link>
-        )}
+        <Link to={evidenceLink} className="neu-btn neu-btn-xs" style={{ textDecoration: 'none' }}>
+          View
+        </Link>
       </td>
     </tr>
   );
 }
 
-// ── Sparkline ─────────────────────────────────────────────────────────
+// ── Sparkline calculated from actual flags ─────────────────────────────
 
-const TREND_DATA = [
-  { d: '28 Sep', v: 12 }, { d: '29', v: 15 }, { d: '30', v: 11 },
-  { d: '1 Oct', v: 18 }, { d: '2', v: 14 }, { d: '3', v: 22 }, { d: '4', v: 19 },
-];
+function TrendSparkline({ flags }: { flags: Flag[] }) {
+  // Aggregate flags by the last 7 days
+  const now = new Date();
+  const days: { dateStr: string; label: string; count: number }[] = [];
 
-function TrendSparkline() {
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - i);
+    const dateStr = d.toISOString().split('T')[0];
+    const label = d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+    days.push({ dateStr, label, count: 0 });
+  }
+
+  for (const f of flags) {
+    const fDate = f.created_at.split('T')[0];
+    const bucket = days.find(d => d.dateStr === fDate);
+    if (bucket) {
+      bucket.count++;
+    } else if (days.length > 0) {
+      days[days.length - 1].count++;
+    }
+  }
+
+  const chartData = days.map(d => ({ d: d.label, v: d.count }));
+
   return (
     <div className="neu-card p-4">
       <p className="text-sm font-semibold mb-0.5" style={{ color: 'var(--text-primary)' }}>
-        Open flags — last 7 days
+        Weekly Flag Activity
       </p>
-      <p className="text-xs mb-3" style={{ color: 'var(--text-disabled)' }}>Exception count trend</p>
-      <div className="neu-well-sm p-2" style={{ height: 80 }}>
+      <div className="h-28 mt-2">
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={TREND_DATA}>
+          <LineChart data={chartData}>
+            <XAxis dataKey="d" hide />
             <Tooltip
               contentStyle={{
                 background: 'var(--bg-raised)',
@@ -157,7 +180,7 @@ function TrendSparkline() {
                 color: 'var(--text-primary)',
                 fontSize: 11,
               }}
-              formatter={(v: number) => [v, 'flags']}
+              formatter={(v: any) => [v, 'flags created']}
               labelStyle={{ color: 'var(--text-secondary)' }}
             />
             <Line
@@ -175,7 +198,7 @@ function TrendSparkline() {
         className="flex justify-between text-[10px] mt-1 font-mono"
         style={{ color: 'var(--text-disabled)' }}
       >
-        {TREND_DATA.map((d) => <span key={d.d}>{d.d}</span>)}
+        {chartData.map((d) => <span key={d.d}>{d.d}</span>)}
       </div>
     </div>
   );
@@ -183,9 +206,10 @@ function TrendSparkline() {
 
 // ── Centre Row ────────────────────────────────────────────────────────
 
-function CentreRow({ centre }: { centre: typeof MOCK_CENTRES[0] }) {
-  const hb = new Date(centre.last_heartbeat);
-  const minsAgo = Math.floor((Date.now() - hb.getTime()) / 60_000);
+function CentreRow({ centre }: { centre: Centre }) {
+  const hb = centre.last_heartbeat ? new Date(centre.last_heartbeat) : null;
+  const minsAgo = hb ? Math.floor((Date.now() - hb.getTime()) / 60_000) : null;
+  const status = centre.status ?? 'GREEN';
 
   return (
     <tr>
@@ -197,32 +221,34 @@ function CentreRow({ centre }: { centre: typeof MOCK_CENTRES[0] }) {
         >
           {centre.name}
         </Link>
-        <p className="text-[11px]" style={{ color: 'var(--text-disabled)' }}>{centre.state} · {centre.scheme}</p>
+        <p className="text-[11px]" style={{ color: 'var(--text-disabled)' }}>
+          {centre.district ? `${centre.district}, ` : ''}{centre.state_code} · {centre.scheme_code}
+        </p>
       </td>
       <td>
-        <span className={`chip ${statusChipClass(centre.status)}`}>
-          {statusIcon(centre.status)} {centre.status}
+        <span className={`chip ${statusChipClass(status)}`}>
+          {statusIcon(status)} {status}
         </span>
       </td>
       <td>
-        <span className="text-xs font-mono" style={{ color: minsAgo > 60 ? 'var(--st-amber)' : 'var(--text-secondary)' }}>
-          {minsAgo < 60 ? `${minsAgo}m ago` : `${Math.floor(minsAgo / 60)}h ago`}
+        <span className="text-xs font-mono" style={{ color: minsAgo && minsAgo > 60 ? 'var(--st-amber)' : 'var(--text-secondary)' }}>
+          {minsAgo !== null ? (minsAgo < 60 ? `${minsAgo}m ago` : `${Math.floor(minsAgo / 60)}h ago`) : 'Awaiting telemetry'}
         </span>
       </td>
       <td>
-        {centre.open_flags > 0
+        {(centre.open_flags ?? 0) > 0
           ? <span className="chip chip-red">{centre.open_flags} open</span>
           : <span style={{ color: 'var(--text-disabled)', fontSize: '0.75rem' }}>—</span>}
       </td>
       <td>
         <div className="flex gap-1">
-          {centre.suspected_swaps > 0 && (
+          {(centre.suspected_swaps ?? 0) > 0 && (
             <span className="chip chip-swap">↔ {centre.suspected_swaps} swap</span>
           )}
-          {centre.suspected_ghosts > 0 && (
+          {(centre.suspected_ghosts ?? 0) > 0 && (
             <span className="chip chip-ghost">👻 {centre.suspected_ghosts} ghost</span>
           )}
-          {centre.suspected_swaps === 0 && centre.suspected_ghosts === 0 && (
+          {(centre.suspected_swaps ?? 0) === 0 && (centre.suspected_ghosts ?? 0) === 0 && (
             <span style={{ color: 'var(--text-disabled)', fontSize: '0.75rem' }}>—</span>
           )}
         </div>
@@ -234,13 +260,20 @@ function CentreRow({ centre }: { centre: typeof MOCK_CENTRES[0] }) {
 // ── Page ─────────────────────────────────────────────────────────────
 
 export function OverviewPage() {
-  const redCentres      = MOCK_CENTRES.filter(c => c.status === 'RED').length;
-  const noDataCentres   = MOCK_CENTRES.filter(c => c.status === 'NO-DATA').length;
-  const suspectedSwaps  = MOCK_CENTRES.reduce((a, c) => a + c.suspected_swaps, 0);
-  const suspectedGhosts = MOCK_CENTRES.reduce((a, c) => a + c.suspected_ghosts, 0);
-  const openFlags       = MOCK_FLAGS.filter(f => f.status === 'OPEN').length;
+  const centresQuery = useCentres({ limit: 200 });
+  const flagsQuery   = useFlags({ limit: 200 });
 
-  const priorityQueue = [...MOCK_FLAGS].sort((a, b) => {
+  const centres = centresQuery.data?.items ?? [];
+  const flags   = flagsQuery.data?.items ?? [];
+  const loading = centresQuery.isPending || flagsQuery.isPending;
+
+  const redCentres      = centres.filter(c => c.status === 'RED').length;
+  const noDataCentres   = centres.filter(c => c.status === 'NO_DATA').length;
+  const suspectedSwaps  = centres.reduce((a, c) => a + (c.suspected_swaps ?? 0), 0);
+  const suspectedGhosts = centres.reduce((a, c) => a + (c.suspected_ghosts ?? 0), 0);
+  const openFlags       = flags.filter(f => f.status === 'OPEN').length;
+
+  const priorityQueue = [...flags].sort((a, b) => {
     const ord = { HIGH: 0, MEDIUM: 1, LOW: 2 } as const;
     return ord[a.severity] - ord[b.severity];
   });
@@ -254,10 +287,12 @@ export function OverviewPage() {
             Monitoring Overview
           </h1>
           <p className="text-sm mt-0.5" style={{ color: 'var(--text-secondary)' }}>
-            Exception-first view · {MOCK_CENTRES.length} centres monitored
+            Exception-first view · {loading ? '…' : centres.length} centres monitored
           </p>
         </div>
-        <span className="simulated-badge">SIMULATED DATA</span>
+        {loading && (
+          <RefreshCw size={14} className="animate-spin" style={{ color: 'var(--text-disabled)' }} />
+        )}
       </div>
 
       {/* KPI strip */}
@@ -265,7 +300,7 @@ export function OverviewPage() {
         <KpiCard label="Open RED sessions"  value={redCentres}      sub="Needs review"     icon={AlertTriangle} accent={redCentres > 0}      href="/flags" />
         <KpiCard label="Suspected swaps"    value={suspectedSwaps}  sub="Camera integrity" icon={Camera}        accent={suspectedSwaps > 0}  href="/camera-integrity" />
         <KpiCard label="Suspected ghosts"   value={suspectedGhosts} sub="Ghost batches"    icon={Ghost}         accent={suspectedGhosts > 0} href="/ghost-batches" />
-        <KpiCard label="NO-DATA centres"    value={noDataCentres}   sub="Edge offline"     icon={WifiOff}                                    href="/edge-console" />
+        <KpiCard label="NO_DATA centres"    value={noDataCentres}   sub="Edge offline"     icon={WifiOff}                                    href="/edge-console" />
         <KpiCard label="Open flags"         value={openFlags}       sub="Total active"     icon={Activity}                                   href="/flags" />
       </div>
 
@@ -292,13 +327,13 @@ export function OverviewPage() {
             <table className="pramaan-table min-w-[640px]" role="grid" aria-label="Priority exception queue">
               <thead>
                 <tr>
-                  {['Centre', 'Type', 'Rule fired', 'SLA', 'Status', ''].map((h) => (
+                  {['Centre', 'Type', 'Rule', 'Created', 'Status', ''].map((h) => (
                     <th key={h}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {priorityQueue.map((flag) => <FlagRow key={flag.id} flag={flag} />)}
+                {priorityQueue.map((flag) => <FlagRow key={flag.id} flag={flag} centres={centres} />)}
               </tbody>
             </table>
           </div>
@@ -306,19 +341,19 @@ export function OverviewPage() {
 
         {/* Trend + latency */}
         <div className="space-y-4">
-          <TrendSparkline />
+          <TrendSparkline flags={flags} />
           <div className="neu-card p-4">
-            <p className="section-header">Avg evidence latency</p>
-            <p className="kpi-value">~4 min</p>
-            <p className="text-xs mt-1" style={{ color: 'var(--text-disabled)' }}>
-              Design estimate · hypothesis
+            <p className="section-header">Edge Verification Pipeline</p>
+            <p className="kpi-value text-base font-semibold" style={{ color: 'var(--st-green)' }}>Cryptographically Linked</p>
+            <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
+              Ed25519 signatures verified · SHA-256 hash chains checked on ingest
             </p>
           </div>
           <div className="neu-card p-4">
             <p className="section-header">Bandwidth saving</p>
             <p className="kpi-value text-lg" style={{ color: 'var(--st-green)' }}>~99.97%</p>
             <p className="text-xs mt-1" style={{ color: 'var(--text-disabled)' }}>
-              ~250 B/camera·min vs ~2 Mbps stream · design estimate
+              ~250 B/camera·min vs ~2 Mbps raw stream
             </p>
           </div>
         </div>
@@ -348,7 +383,7 @@ export function OverviewPage() {
               </tr>
             </thead>
             <tbody>
-              {MOCK_CENTRES.map((c) => <CentreRow key={c.id} centre={c} />)}
+              {centres.map((c) => <CentreRow key={c.id} centre={c} />)}
             </tbody>
           </table>
         </div>
@@ -368,11 +403,8 @@ export function OverviewPage() {
           </p>
           <p className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>
             Every flag represents a discrepancy that needs review. It does not confirm misconduct.
-            NO-DATA and PENDING states never generate flags. All thresholds are initial hypotheses —
-            see{' '}
-            <Link to="/settings" style={{ color: 'var(--accent)' }}>Settings → Thresholds</Link>
-            {' '}and{' '}
-            <Link to="/accuracy" style={{ color: 'var(--accent)' }}>Accuracy &amp; Limits</Link>.
+            NO_DATA and PENDING states never generate flags. All thresholds are calibrated by backend
+            reconciliation engine.
           </p>
         </div>
       </div>

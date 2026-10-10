@@ -1,42 +1,58 @@
-﻿# Logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
 
-# Dependencies
-node_modules/
-**/node_modules/
+# C extensions
+*.so
 
-# Production / Build output
-dist/
-**/dist/
-dist-ssr/
-**/dist-ssr/
+# Distribution / packaging
+.Python
 build/
-**/build/
-.output/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 
-# Environment files
+# Virtual environments
 .env
-.env.local
-.env.*.local
-!.env.example
+.venv
+env/
+venv/
+ENV/
 
-# IDE & OS files
-.vscode/
-.idea/
-.DS_Store
-Thumbs.db
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
+# Local databases & artifacts
+*.db
+*.sqlite3
+pramaan_dev.db
 
-# Temporary / Cache
-.cache/
-.vite/
-**/.vite/
+# Test & coverage
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+
+# Node / Frontend
+node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Ultralytics & Weights
+*.pt
+yolov8n.pt
+runs/
+
+# Webcam Agent local state & private keys (CRITICAL: NEVER COMMIT PRIVATE KEYS)
+.webcam_state/
+*.private_key
+dev_webcam_*.json

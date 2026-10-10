@@ -6,7 +6,6 @@ import {
 } from 'recharts';
 import type { ClaimedVsObservedPoint } from '@/types';
 import { cn } from '@/lib/utils';
-import { SimulatedBadge } from '@/components/shared/SimulatedBadge';
 
 interface ClaimedVsObservedChartProps {
   data: ClaimedVsObservedPoint[];
@@ -68,7 +67,6 @@ export function ClaimedVsObservedChart({ data, title, className }: ClaimedVsObse
     <div className={cn('card p-4 space-y-2', className)}>
       <div className="flex items-center justify-between gap-2">
         {title && <h3 className="text-sm font-semibold text-slate-800">{title}</h3>}
-        <SimulatedBadge className="ml-auto" />
       </div>
 
       {/* Ratio legend */}

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Search, Bell, Sun, Contrast } from 'lucide-react';
+import { Search, Bell, Contrast, ShieldCheck } from 'lucide-react';
+import { useFlags } from '@/hooks/useFlags';
 
 interface TopBarProps {
   lang: 'en' | 'hi' | 'mr';
@@ -11,16 +12,19 @@ interface TopBarProps {
   onToggleOnline: () => void;
   highContrast: boolean;
   onToggleHighContrast: () => void;
-  notificationCount: number;
+  notificationCount?: number;
 }
 
 export function TopBar({
   lang, onLangChange, role, onRoleChange,
   isOnline, onToggleOnline,
   highContrast, onToggleHighContrast,
-  notificationCount,
 }: TopBarProps) {
   const [notifOpen, setNotifOpen] = useState(false);
+  const { data: flagsData } = useFlags({ status: 'OPEN', limit: 10 });
+
+  const openFlags = flagsData?.items ?? [];
+  const unreadCount = openFlags.length;
 
   const langs: Array<{ code: 'en' | 'hi' | 'mr'; label: string }> = [
     { code: 'en', label: 'EN' },
@@ -63,17 +67,15 @@ export function TopBar({
       <div className="flex-1" />
 
       {/* Connectivity */}
-      <button
-        onClick={onToggleOnline}
+      <div
         className="flex items-center gap-1.5 neu-btn neu-btn-xs"
-        title={isOnline ? 'Simulated online — click to toggle offline' : 'Simulated offline — click to go online'}
-        aria-label={isOnline ? 'Online' : 'Offline'}
+        title="Live backend WebSocket connection"
       >
-        <span className={`conn-dot conn-dot-${isOnline ? 'online' : 'offline'}`} />
-        <span className="text-xs" style={{ color: isOnline ? 'var(--st-green)' : 'var(--st-red)' }}>
-          {isOnline ? 'Online' : 'Offline'}
+        <span className="conn-dot conn-dot-online" />
+        <span className="text-xs" style={{ color: 'var(--st-green)' }}>
+          Online
         </span>
-      </button>
+      </div>
 
       {/* Language switcher */}
       <div className="neu-segment-group" role="group" aria-label="Language switcher">
@@ -96,7 +98,7 @@ export function TopBar({
         onChange={(e) => onRoleChange(e.target.value as typeof role)}
         className="neu-input"
         style={{ width: 'auto', padding: '0.3rem 0.6rem', fontSize: '0.8rem' }}
-        aria-label="Demo role switcher"
+        aria-label="Role selector"
       >
         {roles.map((r) => (
           <option key={r.code} value={r.code}>{r.label}</option>
@@ -119,15 +121,15 @@ export function TopBar({
         <button
           className="neu-btn neu-btn-xs relative"
           onClick={() => setNotifOpen((o) => !o)}
-          aria-label={`Notifications: ${notificationCount} unread`}
+          aria-label={`Notifications: ${unreadCount} open flags`}
         >
           <Bell size={14} />
-          {notificationCount > 0 && (
+          {unreadCount > 0 && (
             <span
               className="absolute -top-1 -right-1 text-[9px] font-bold rounded-full px-1 leading-4 min-w-[14px] text-center"
               style={{ background: 'var(--st-red)', color: '#fff' }}
             >
-              {notificationCount}
+              {unreadCount}
             </span>
           )}
         </button>
@@ -135,31 +137,53 @@ export function TopBar({
         {notifOpen && (
           <div
             className="pramaan-modal absolute right-0 top-8 z-50"
-            style={{ width: 320, padding: '1rem' }}
+            style={{ width: 340, padding: '1rem' }}
           >
-            <p className="section-header mb-2">Notifications</p>
-            {[
-              { msg: 'SUSPECTED_SWAP — CAM-C-01 (Computer Centre Pune)', t: '10:57', sev: 'red' },
-              { msg: 'Ghost Score ≥ 60 — BATCH-D-01 (Skill Centre Patna)', t: '07:00', sev: 'amber' },
-              { msg: 'Edge offline — CTR-E (3 days)', t: '3d ago', sev: 'nodata' },
-            ].map((n, i) => (
-              <div key={i} className="flex items-start gap-2 py-2" style={{ borderBottom: i < 2 ? 'var(--edge)' : 'none' }}>
-                <span
-                  className="w-2 h-2 rounded-full mt-1 shrink-0"
-                  style={{ background: `var(--st-${n.sev})` }}
-                />
-                <div className="flex-1">
-                  <p className="text-xs" style={{ color: 'var(--text-primary)' }}>{n.msg}</p>
-                  <p className="text-[10px]" style={{ color: 'var(--text-disabled)' }}>{n.t}</p>
-                </div>
-              </div>
-            ))}
+            <div className="flex items-center justify-between mb-2">
+              <p className="section-header">Active Anomaly Flags</p>
+              <Link to="/flags" onClick={() => setNotifOpen(false)} className="text-xs" style={{ color: 'var(--accent)' }}>
+                View all
+              </Link>
+            </div>
+            {openFlags.length === 0 ? (
+              <p className="text-xs" style={{ color: 'var(--text-disabled)' }}>No active flags requiring attention.</p>
+            ) : (
+              openFlags.map((f) => (
+                <Link
+                  key={f.id}
+                  to="/flags"
+                  onClick={() => setNotifOpen(false)}
+                  className="flex items-start gap-2 py-2 hover:bg-white/5 px-1 rounded transition-colors"
+                  style={{ borderBottom: 'var(--edge)', textDecoration: 'none' }}
+                >
+                  <span
+                    className="w-2 h-2 rounded-full mt-1 shrink-0"
+                    style={{ background: f.severity === 'HIGH' ? 'var(--st-red)' : 'var(--st-amber)' }}
+                  />
+                  <div className="flex-1">
+                    <p className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>
+                      {f.flag_type.replace(/_/g, ' ')}
+                    </p>
+                    <p className="text-[11px] truncate" style={{ color: 'var(--text-secondary)' }}>
+                      {f.rule_name}
+                    </p>
+                    <p className="text-[10px] font-mono mt-0.5" style={{ color: 'var(--text-disabled)' }}>
+                      {new Date(f.created_at).toLocaleTimeString('en-IN')}
+                    </p>
+                  </div>
+                </Link>
+              ))
+            )}
           </div>
         )}
       </div>
 
-      {/* Simulated badge (compact) */}
-      <span className="simulated-badge">SIMULATED</span>
+      <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-[6px]" style={{ background: 'rgba(61,220,151,0.08)', border: '1px solid rgba(61,220,151,0.2)' }}>
+        <ShieldCheck size={12} style={{ color: 'var(--st-green)' }} />
+        <span className="text-[10px] font-mono font-semibold" style={{ color: 'var(--st-green)' }}>
+          LIVE MVP
+        </span>
+      </div>
     </header>
   );
 }

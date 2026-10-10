@@ -5,7 +5,6 @@ import {
 } from 'recharts';
 import type { ViewEvent } from '@/types';
 import { cn } from '@/lib/utils';
-import { SimulatedBadge } from '@/components/shared/SimulatedBadge';
 import { StatusChip } from '@/components/status/StatusChip';
 
 interface SimilarityTimelineProps {
@@ -73,7 +72,6 @@ export function SimilarityTimeline({
     <div className={cn('card p-4 space-y-2', className)}>
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-sm font-semibold text-slate-800">Scene similarity over time</h3>
-        <SimulatedBadge />
       </div>
 
       <div className="flex gap-4 text-xs text-slate-500 flex-wrap">
