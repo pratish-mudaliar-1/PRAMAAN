@@ -15,11 +15,12 @@ export default defineConfig({
     port: 5174,
     host: true,
     proxy: {
-      // /api/v1/... → http://localhost:8000/v1/...
+      // /api/v1/... → http://localhost:8001/v1/...
       // (strips the /api prefix, keeps /v1/... intact)
       '/api': {
-        target: process.env.VITE_API_URL || 'http://localhost:8000',
+        target: process.env.VITE_API_URL || 'http://localhost:8001',
         changeOrigin: true,
+        ws: true,
         rewrite: (p) => p.replace(/^\/api/, ''),
       },
     },

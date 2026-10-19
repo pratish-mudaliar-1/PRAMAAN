@@ -1,0 +1,5 @@
+# All clips, frames and labels in this directory are local development data only.
+# They must NOT be committed, shared, or transmitted.
+*
+!.gitignore
+!README.md

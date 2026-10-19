@@ -1,11 +1,29 @@
-"""scripts/webcam_edge_agent.py — Authentic Laptop Webcam Edge Detection & Cryptographic Signing Agent.
+"""backend/scripts/webcam_edge_agent.py — Authentic Laptop Webcam Edge Detection & Cryptographic Signing Agent.
 
-Captures real webcam video frames, runs real YOLOv8n person detection, aggregates minute-level
-observations, computes canonical hashes, signs records with a local Ed25519 private key, maintains
+Captures real webcam video frames, runs real YOLOv8n person detection via the
+shared edge.detector.PersonDetector module, aggregates minute-level observations,
+computes canonical hashes, signs records with a local Ed25519 private key, maintains
 the observation hash chain, and submits batches via HTTP to POST /v1/ingest/observations.
 
 Usage:
-    python scripts/webcam_edge_agent.py [--interval-seconds 60] [--camera-index 0] [--headless]
+    python scripts/webcam_edge_agent.py [options]
+
+Key options:
+    --interval-seconds  Aggregation interval in seconds (default: 60)
+    --camera-index      Webcam device index (default: 0)
+    --headless          Run without opening GUI preview window
+    --debug-overlay     Open local debug window with boxes drawn (off by default)
+    --api-url           Backend URL override
+    --max-observations  Exit after N observations (0 = unlimited)
+    --conf              YOLO confidence threshold (default: 0.25)
+    --iou               NMS IoU threshold (default: 0.45)
+    --imgsz             Model inference image size (default: 640)
+    --max-det           Max detections per frame (default: 100)
+    --model-path        Path to YOLO .pt weights (default: auto-detect yolov8n.pt)
+    --cap-width         Requested capture width in pixels (default: 1280)
+    --cap-height        Requested capture height in pixels (default: 720)
+    --frame-skip        Process every Nth frame (default: 1 = every frame)
+    --device            Inference device: cpu / 0 / cuda (default: cpu)
 """
 from __future__ import annotations
 
@@ -21,10 +39,13 @@ from typing import Any
 def find_workspace_root() -> str:
     cur = os.path.abspath(os.path.dirname(__file__))
     while cur and os.path.dirname(cur) != cur:
-        if os.path.exists(os.path.join(cur, "backend")) and os.path.exists(os.path.join(cur, "frontend")):
+        if os.path.exists(os.path.join(cur, "backend")) and os.path.exists(
+            os.path.join(cur, "frontend")
+        ):
             return cur
         cur = os.path.dirname(cur)
     return os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
 
 WORKSPACE_ROOT = find_workspace_root()
 BACKEND_DIR = os.path.join(WORKSPACE_ROOT, "backend")
@@ -35,8 +56,8 @@ import cv2
 import httpx
 import numpy as np
 from app.core.security.device_key import canonical_json, compute_record_hash
+from edge.detector import PersonDetector, aggregate_counts
 from nacl.signing import SigningKey
-from ultralytics import YOLO
 
 STATE_DIR = os.path.join(WORKSPACE_ROOT, ".webcam_state")
 KEY_FILE = os.path.join(STATE_DIR, "device_key.json")
@@ -44,12 +65,15 @@ CONFIG_FILE = os.path.join(STATE_DIR, "agent_config.json")
 CHAIN_FILE = os.path.join(STATE_DIR, "chain_state.json")
 
 
+# ---------------------------------------------------------------------------
+# Credential helpers (unchanged from original)
+# ---------------------------------------------------------------------------
 
 def load_agent_credentials() -> tuple[dict[str, Any], SigningKey, str | None]:
     """Load agent config, local private key, and last accepted hash chain state."""
     if not os.path.exists(CONFIG_FILE) or not os.path.exists(KEY_FILE):
-        print(f"[ERROR] Missing setup state. Please run setup first:")
-        print(f"        python scripts/setup_local_webcam_demo.py")
+        print("[ERROR] Missing setup state. Please run setup first:")
+        print("        python scripts/setup_local_webcam_demo.py")
         sys.exit(1)
 
     with open(CONFIG_FILE, "r", encoding="utf-8") as f:
@@ -86,19 +110,112 @@ def save_chain_state(last_hash: str) -> None:
         )
 
 
+# ---------------------------------------------------------------------------
+# Camera helpers
+# ---------------------------------------------------------------------------
+
+def open_camera(camera_index: int) -> cv2.VideoCapture:
+    """Open the first readable camera, trying DirectShow then default backend."""
+    backends = [("DirectShow", cv2.CAP_DSHOW), ("Default", cv2.CAP_ANY)]
+    candidates = [camera_index] + [i for i in [0, 1, 2] if i != camera_index]
+
+    for backend_name, backend_id in backends:
+        for idx in candidates:
+            try:
+                cap = (
+                    cv2.VideoCapture(idx, backend_id)
+                    if backend_id != cv2.CAP_ANY
+                    else cv2.VideoCapture(idx)
+                )
+                if cap.isOpened():
+                    ret, test_frame = cap.read()
+                    if ret and test_frame is not None:
+                        print(f"[WEBCAM] Opened index {idx} ({backend_name}).")
+                        return cap
+                cap.release()
+            except Exception:
+                continue
+
+    print("[ERROR] Could not open webcam. Check that it is connected and not in use.")
+    sys.exit(1)
+
+
+def configure_camera(
+    cap: cv2.VideoCapture,
+    width: int,
+    height: int,
+) -> dict[str, Any]:
+    """Request resolution and MJPG; read back what the driver actually negotiated."""
+    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+    cap.set(cv2.CAP_PROP_FPS, 30)
+
+    actual_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    actual_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    actual_fps = cap.get(cv2.CAP_PROP_FPS)
+    fourcc_int = int(cap.get(cv2.CAP_PROP_FOURCC))
+    fourcc_chars = "".join(
+        chr((fourcc_int >> (8 * i)) & 0xFF) for i in range(4)
+    ).strip("\x00")
+
+    return {
+        "width": actual_w,
+        "height": actual_h,
+        "fps": actual_fps,
+        "fourcc": fourcc_chars,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="PRAMAAN Authentic Laptop Webcam Edge Agent")
-    parser.add_argument("--interval-seconds", type=int, default=60, help="Aggregation interval in seconds (default: 60)")
-    parser.add_argument("--camera-index", type=int, default=0, help="Webcam device index (default: 0)")
-    parser.add_argument("--headless", action="store_true", help="Run without opening GUI preview window")
-    parser.add_argument("--api-url", type=str, default=None, help="Backend URL override (default: http://localhost:8000)")
-    parser.add_argument("--max-observations", type=int, default=0, help="Exit after N observations (0 for unlimited)")
-    parser.add_argument("--conf-threshold", type=float, default=0.35, help="YOLO confidence threshold (default: 0.35)")
+    parser = argparse.ArgumentParser(
+        description="PRAMAAN Authentic Laptop Webcam Edge Agent",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument("--interval-seconds", type=int, default=60,
+                        help="Aggregation interval in seconds")
+    parser.add_argument("--camera-index", type=int, default=0,
+                        help="Webcam device index")
+    parser.add_argument("--headless", action="store_true",
+                        help="Run without opening any GUI window (overrides --debug-overlay)")
+    parser.add_argument("--debug-overlay", action="store_true",
+                        help="Open local window with bounding boxes and live count drawn "
+                             "(off by default; local only, no frames saved)")
+    parser.add_argument("--api-url", type=str, default=None,
+                        help="Backend URL override (default: http://localhost:8000)")
+    parser.add_argument("--max-observations", type=int, default=0,
+                        help="Exit after N observations (0 for unlimited)")
+    # Detector configuration (Phase 3 improvements)
+    parser.add_argument("--conf", type=float, default=PersonDetector.DEFAULT_CONF,
+                        help="YOLO confidence threshold")
+    parser.add_argument("--iou", type=float, default=PersonDetector.DEFAULT_IOU,
+                        help="NMS IoU threshold (lower = less merging of nearby boxes)")
+    parser.add_argument("--imgsz", type=int, default=PersonDetector.DEFAULT_IMGSZ,
+                        help="Model inference image size in pixels")
+    parser.add_argument("--max-det", type=int, default=PersonDetector.DEFAULT_MAX_DET,
+                        help="Maximum detections per frame")
+    parser.add_argument("--model-path", type=str, default="",
+                        help="Path to YOLO .pt weights (auto-detected if not set)")
+    parser.add_argument("--device", type=str, default=PersonDetector.DEFAULT_DEVICE,
+                        help="Inference device: cpu / 0 / cuda")
+    # Camera configuration
+    parser.add_argument("--cap-width", type=int, default=1280,
+                        help="Requested capture width (driver may negotiate lower)")
+    parser.add_argument("--cap-height", type=int, default=720,
+                        help="Requested capture height (driver may negotiate lower)")
+    parser.add_argument("--frame-skip", type=int, default=1,
+                        help="Process every Nth frame (1 = every frame)")
     args = parser.parse_args()
 
     config, signing_key, last_accepted_hash = load_agent_credentials()
     api_url = args.api_url or config.get("api_url", "http://localhost:8000")
     ingest_endpoint = f"{api_url.rstrip('/')}/v1/ingest/observations"
+
+    show_overlay = args.debug_overlay and not args.headless
 
     print("=" * 80)
     print("PRAMAAN — Authentic Laptop Webcam Edge Agent")
@@ -112,160 +229,141 @@ def main() -> None:
     print(f"[CHAIN]   Initial prev_hash: {last_accepted_hash or 'None (genesis record)'}")
     print(f"[INTERVAL] {args.interval_seconds} seconds per observation")
     print(f"[TARGET]  {ingest_endpoint}")
+    print(f"[OVERLAY] debug-overlay={'ON (local window)' if show_overlay else 'OFF'}")
     print("=" * 80)
 
-    # 1. Load YOLOv8n Person Detector
-    print(f"\n[MODEL] Loading Ultralytics YOLOv8n detector on CPU...")
-    try:
-        model = YOLO("yolov8n.pt")
-        print(f"[MODEL] YOLOv8n loaded successfully (COCO class 0: person).")
-    except Exception as exc:
-        print(f"[ERROR] Failed to load YOLOv8n model: {exc}")
-        sys.exit(1)
+    # 1. Load detector (shared module — same code as eval harness)
+    print(f"\n[MODEL] Loading PersonDetector "
+          f"(conf={args.conf} iou={args.iou} imgsz={args.imgsz} "
+          f"max_det={args.max_det} device={args.device})...")
+    detector = PersonDetector(
+        model_path=args.model_path,
+        conf=args.conf,
+        iou=args.iou,
+        imgsz=args.imgsz,
+        max_det=args.max_det,
+        device=args.device,
+    )
+    desc = detector.describe()
+    print(f"[MODEL] Loaded: {desc['model_path']}")
+    print(f"[MODEL] Weights SHA-256 prefix: {desc['weights_sha256_prefix']}")
+    print(f"[MODEL] Settings: conf={desc['conf']} iou={desc['iou']} "
+          f"imgsz={desc['imgsz']} max_det={desc['max_det']}")
 
-    # 2. Open Laptop Integrated Webcam
-    print(f"[WEBCAM] Opening default laptop webcam (device index {args.camera_index})...")
-    cap = cv2.VideoCapture(args.camera_index)
-    if not cap.isOpened():
-        print(f"[ERROR] Could not open webcam at index {args.camera_index}.")
-        print(f"        Please check that your webcam is connected and not in use by another app.")
-        sys.exit(1)
+    # 2. Open webcam
+    print(f"\n[WEBCAM] Probing laptop webcam (preferred index {args.camera_index})...")
+    cap = open_camera(args.camera_index)
+    cam_info = configure_camera(cap, args.cap_width, args.cap_height)
+    print(f"[WEBCAM] Negotiated: {cam_info['width']}×{cam_info['height']} "
+          f"{cam_info['fourcc']} @ {cam_info['fps']:.0f}fps")
 
-    # Set resolution for performance
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-    print(f"[WEBCAM] Camera stream opened successfully (640x480).")
+    if show_overlay:
+        cv2.namedWindow("PRAMAAN Edge Agent — Debug Overlay (local only)", cv2.WINDOW_AUTOSIZE)
 
     interval_counts: list[int] = []
     interval_start_time = time.time()
     total_observations_submitted = 0
-    frame_counter = 0
+    raw_frame_counter = 0
     fps_timer = time.time()
+    fps_frame_count = 0
     current_fps = 0.0
 
-    print("\n[AGENT] Starting real-time detection and observation loop. Press 'q' in preview or Ctrl+C to stop.")
+    print("\n[AGENT] Starting detection loop. Press 'q'/ESC in overlay, or Ctrl+C to stop.")
     print("-" * 80)
 
     try:
         while True:
             ret, frame = cap.read()
             if not ret or frame is None:
-                print(f"[WARN] Failed to read frame from webcam.")
+                print("[WARN] Failed to read frame from webcam.")
                 time.sleep(0.05)
                 continue
 
-            frame_counter += 1
-            if time.time() - fps_timer >= 1.0:
-                current_fps = frame_counter / (time.time() - fps_timer)
-                frame_counter = 0
-                fps_timer = time.time()
+            raw_frame_counter += 1
+            fps_frame_count += 1
 
-            # Run YOLO Person Detection (COCO class 0: person)
-            results = model(frame, classes=[0], conf=args.conf_threshold, verbose=False)
-            boxes = results[0].boxes if len(results) > 0 else []
-            person_count = len(boxes)
+            # FPS counter
+            now = time.time()
+            if now - fps_timer >= 1.0:
+                current_fps = fps_frame_count / (now - fps_timer)
+                fps_frame_count = 0
+                fps_timer = now
+
+            # Frame-skip: only run inference on every Nth frame
+            if raw_frame_counter % args.frame_skip != 0:
+                # Still update overlay if needed
+                if show_overlay:
+                    cv2.imshow("PRAMAAN Edge Agent — Debug Overlay (local only)", frame)
+                    key = cv2.waitKey(1) & 0xFF
+                    if key in (ord("q"), 27):
+                        print("\n[AGENT] Stop requested by user.")
+                        break
+                continue
+
+            # Run detection via shared module
+            result = detector.detect(frame)
+            person_count = result.person_count
             interval_counts.append(person_count)
 
-            # Check if aggregation interval elapsed
+            # Timer
             elapsed = time.time() - interval_start_time
             remaining = max(0, int(args.interval_seconds - elapsed))
 
-            # Display Preview HUD
-            if not args.headless:
-                display_frame = frame.copy()
+            # Debug overlay (--debug-overlay flag; off by default)
+            if show_overlay:
+                disp = frame.copy()
 
-                # Draw bounding boxes for detected persons
-                for box in boxes:
-                    x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
-                    conf = float(box.conf[0])
-                    cv2.rectangle(display_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                for det in result.detections:
+                    x1, y1, x2, y2 = map(int, det.xyxy)
+                    conf_val = det.confidence
+                    cv2.rectangle(disp, (x1, y1), (x2, y2), (0, 255, 80), 2)
                     cv2.putText(
-                        display_frame,
-                        f"Person {conf:.2f}",
+                        disp,
+                        f"Person {conf_val:.2f}",
                         (x1, max(20, y1 - 8)),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        0.5,
-                        (0, 255, 0),
-                        2,
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 80), 2,
                     )
 
-                # Overlay HUD Panel
-                hud_color = (20, 20, 20)
-                cv2.rectangle(display_frame, (10, 10), (420, 140), hud_color, -1)
-                cv2.rectangle(display_frame, (10, 10), (420, 140), (0, 200, 255), 1)
+                h_img, w_img = disp.shape[:2]
+                cv2.rectangle(disp, (8, 8), (w_img - 8, 175), (20, 20, 20), -1)
+                cv2.rectangle(disp, (8, 8), (w_img - 8, 175), (0, 200, 255), 1)
 
-                cv2.putText(
-                    display_frame,
-                    f"PRAMAAN EDGE AGENT (LOCAL WEBCAM)",
-                    (20, 30),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.5,
-                    (0, 200, 255),
-                    1,
-                    cv2.LINE_AA,
-                )
-                cv2.putText(
-                    display_frame,
-                    f"Live Detected Persons: {person_count}",
-                    (20, 58),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.7,
-                    (0, 255, 0) if person_count > 0 else (0, 165, 255),
-                    2,
-                    cv2.LINE_AA,
-                )
-                cv2.putText(
-                    display_frame,
-                    f"Claimed Attendance: {config.get('claimed_count', 3)} (Dev Claim)",
-                    (20, 82),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.45,
-                    (200, 200, 200),
-                    1,
-                    cv2.LINE_AA,
-                )
-                cv2.putText(
-                    display_frame,
-                    f"Aggregation: {remaining}s remaining | FPS: {current_fps:.1f}",
-                    (20, 104),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.45,
-                    (200, 200, 200),
-                    1,
-                    cv2.LINE_AA,
-                )
-                cv2.putText(
-                    display_frame,
-                    f"Sent: {total_observations_submitted} obs | Chain: {last_accepted_hash[:12] if last_accepted_hash else 'None'}...",
-                    (20, 126),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.42,
-                    (150, 150, 150),
-                    1,
-                    cv2.LINE_AA,
-                )
+                hud = [
+                    ("PRAMAAN EDGE AGENT — Debug Overlay (local only)", (0, 200, 255)),
+                    (f"Detected: {person_count} person(s)  |  Inf: {result.inference_ms:.0f}ms  |  FPS: {current_fps:.1f}", (0, 255, 80)),
+                    (f"conf={args.conf}  iou={args.iou}  imgsz={args.imgsz}  skip={args.frame_skip}", (200, 200, 200)),
+                    (f"Aggregation: {remaining}s remaining  |  Frames this interval: {len(interval_counts)}", (200, 200, 200)),
+                    (f"Sent: {total_observations_submitted} obs  |  Chain: {last_accepted_hash[:12] if last_accepted_hash else 'None'}...", (150, 150, 150)),
+                ]
+                for i, (text, color) in enumerate(hud):
+                    cv2.putText(disp, text, (16, 32 + i * 28),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.48, color, 1, cv2.LINE_AA)
 
-                cv2.imshow("PRAMAAN Laptop Webcam Edge Agent (Real YOLOv8n)", display_frame)
+                cv2.imshow("PRAMAAN Edge Agent — Debug Overlay (local only)", disp)
                 key = cv2.waitKey(1) & 0xFF
-                if key == ord("q") or key == 27:  # 'q' or ESC
-                    print("\n[AGENT] Stop requested by user via preview window.")
+                if key in (ord("q"), 27):
+                    print("\n[AGENT] Stop requested by user.")
                     break
 
-            # If aggregation interval has completed, construct and submit authentic observation
+            # Aggregation interval complete
             if elapsed >= args.interval_seconds and len(interval_counts) > 0:
                 obs_ts = datetime.now(UTC).replace(second=0, microsecond=0)
-                p_min = int(min(interval_counts))
-                p_max = int(max(interval_counts))
-                p_median = float(np.median(interval_counts))
-                p_p90 = float(np.percentile(interval_counts, 90))
+
+                stats = aggregate_counts(interval_counts)
+                p_min = int(stats["persons_min"])
+                p_max = int(stats["persons_max"])
+                p_median = stats["persons_median"]
+                p_p90 = stats["persons_p90"]
                 frames_used = len(interval_counts)
-                feed_health = 1.0  # Camera frames were actively and successfully read
+                feed_health = 1.0
 
-                print(f"\n[MINUTE] Aggregated {frames_used} webcam frames over {elapsed:.1f}s:")
-                print(f"         Persons: min={p_min}, median={p_median:.1f}, p90={p_p90:.1f}, max={p_max}")
-                print(f"         Feed Health: {feed_health:.1%} | Timestamp: {obs_ts.strftime('%Y-%m-%dT%H:%M:%SZ')}")
+                print(f"\n[MINUTE] Aggregated {frames_used} frames over {elapsed:.1f}s:")
+                print(f"         Persons: min={p_min}, median={p_median:.1f}, "
+                      f"p90={p_p90:.1f}, max={p_max}")
+                print(f"         Feed Health: {feed_health:.1%} | "
+                      f"Timestamp: {obs_ts.strftime('%Y-%m-%dT%H:%M:%SZ')}")
 
-                # Build Payload without signature and hash for canonical serialization
+                # Build payload (schema unchanged — signing contract preserved)
                 payload = {
                     "minute_ts": obs_ts.strftime("%Y-%m-%dT%H:%M:%SZ"),
                     "zone_id": config["zone_id"],
@@ -277,22 +375,23 @@ def main() -> None:
                     "item_counts": {},
                     "feed_health": feed_health,
                     "frames_used": frames_used,
+                    # model_version field carries detector identity — no schema change needed
                     "model_version": config.get("model_version", "yolov8n-laptop-webcam"),
                     "prev_hash": last_accepted_hash,
                 }
 
-                # Cryptographic Canonicalization & SHA-256 Hashing
                 canonical_bytes = canonical_json(payload)
                 record_hash = compute_record_hash(canonical_bytes)
-
-                # Ed25519 Signing
                 signed_data = signing_key.sign(canonical_bytes)
-                signature_b64url = base64.urlsafe_b64encode(signed_data.signature).rstrip(b"=").decode("ascii")
+                signature_b64url = (
+                    base64.urlsafe_b64encode(signed_data.signature)
+                    .rstrip(b"=")
+                    .decode("ascii")
+                )
 
-                print(f"[CRYPTO] Canonical Hash: {record_hash}")
-                print(f"[CRYPTO] Ed25519 Signature: {signature_b64url[:20]}... (Generated by local key)")
+                print(f"[CRYPTO] Hash: {record_hash}")
+                print(f"[CRYPTO] Sig:  {signature_b64url[:20]}...")
 
-                # Assemble Batch Request
                 record_payload = {
                     **payload,
                     "record_hash": record_hash,
@@ -303,7 +402,6 @@ def main() -> None:
                     "records": [record_payload],
                 }
 
-                # Submit to Real Backend API
                 print(f"[INGEST] POST {ingest_endpoint}...")
                 try:
                     with httpx.Client(timeout=10.0) as client:
@@ -312,28 +410,24 @@ def main() -> None:
                     if resp.status_code == 200:
                         data = resp.json()
                         accepted = data.get("accepted", 0)
-                        rejected = data.get("rejected", 0)
                         if accepted > 0:
-                            print(f"[INGEST] HTTP 200 OK — Observation ACCEPTED by backend!")
+                            print(f"[INGEST] HTTP 200 OK — Observation ACCEPTED!")
                             last_accepted_hash = record_hash
                             save_chain_state(last_accepted_hash)
                             total_observations_submitted += 1
                             print(f"[CHAIN]  Hash chain advanced to: {last_accepted_hash}")
-                            print(f"[RECON]  Backend triggered session reconciliation for {config['session_id']}")
                         else:
-                            print(f"[WARN]   Observation rejected by backend: {data.get('results')}")
+                            print(f"[WARN]   Observation rejected: {data.get('results')}")
                     else:
-                        print(f"[ERROR]  Ingest request failed: HTTP {resp.status_code} — {resp.text}")
+                        print(f"[ERROR]  HTTP {resp.status_code} — {resp.text}")
                 except Exception as net_err:
-                    print(f"[ERROR]  Network/connection error calling {ingest_endpoint}: {net_err}")
-                    print(f"         (Ensure backend is running at {api_url})")
+                    print(f"[ERROR]  Network error: {net_err}")
 
-                # Reset interval counters
                 interval_counts = []
                 interval_start_time = time.time()
 
                 if args.max_observations > 0 and total_observations_submitted >= args.max_observations:
-                    print(f"\n[AGENT] Completed requested {args.max_observations} observation(s). Exiting.")
+                    print(f"\n[AGENT] Completed {args.max_observations} observation(s). Exiting.")
                     break
 
     except KeyboardInterrupt:
@@ -341,7 +435,7 @@ def main() -> None:
     finally:
         cap.release()
         cv2.destroyAllWindows()
-        print("[AGENT] Webcam released and preview closed cleanly.")
+        print("[AGENT] Webcam released and windows closed.")
 
 
 if __name__ == "__main__":

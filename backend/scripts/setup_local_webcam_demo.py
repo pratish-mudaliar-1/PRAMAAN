@@ -96,6 +96,10 @@ async def setup() -> None:
     engine = create_engine(db_url)
     session_factory = create_session_factory(engine)
 
+    from app.db.base import Base
+    import app.db.models as _models  # noqa: F401
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
     async with session_factory() as db:
         now = datetime.now(UTC)
@@ -302,7 +306,7 @@ async def setup() -> None:
             "zone_code": zone.zone_code,
             "session_id": str(sess.id),
             "claimed_count": claimed_attendance_count,
-            "api_url": "http://localhost:8000",
+            "api_url": os.getenv("PRAMAAN_BACKEND_URL", "http://localhost:8001"),
             "model_version": "yolov8n-laptop-webcam",
             "camera_index": 0,
             "aggregation_interval_seconds": 60,

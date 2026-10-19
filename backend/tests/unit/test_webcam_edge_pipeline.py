@@ -23,16 +23,22 @@ from app.db.models.flag import Flag
 from app.db.models.threshold import ThresholdProfile
 from app.main import create_app
 from app.services.reconciliation import ReconciliationService
+from edge.detector import aggregate_counts, Detection, FrameResult
 
 
 def test_frame_aggregation_and_percentiles() -> None:
-    """Test mathematical derivation of observation statistics from raw frame detections."""
-    frame_counts = [1, 1, 2, 1, 1, 0, 1, 1, 2, 1]
+    """Test mathematical derivation of observation statistics from raw frame detections.
     
-    p_min = int(min(frame_counts))
-    p_max = int(max(frame_counts))
-    p_median = float(np.median(frame_counts))
-    p_p90 = float(np.percentile(frame_counts, 90))
+    Uses the shared aggregate_counts() function from edge.detector — the same
+    function used by the live agent — to ensure the test covers real behaviour.
+    """
+    frame_counts = [1, 1, 2, 1, 1, 0, 1, 1, 2, 1]
+
+    stats = aggregate_counts(frame_counts)
+    p_min = stats["persons_min"]
+    p_max = stats["persons_max"]
+    p_median = stats["persons_median"]
+    p_p90 = stats["persons_p90"]
     frames_used = len(frame_counts)
     feed_health = 1.0
 
@@ -42,6 +48,46 @@ def test_frame_aggregation_and_percentiles() -> None:
     assert p_p90 == 1.1 or p_p90 == 2.0 or 1.0 <= p_p90 <= 2.0
     assert frames_used == 10
     assert feed_health == 1.0
+
+
+def test_agent_counts_all_person_boxes_not_only_first() -> None:
+    """REGRESSION: The agent must count ALL detected person boxes per frame, not only the first.
+
+    Phase-1 analysis confirmed no code bug in the existing counting code (it already
+    does len(boxes)), but this test locks that behaviour via FrameResult from the
+    shared module so that a future refactor cannot silently regress it.
+    """
+    # Simulate 4 distinct person detections (e.g., 4 people side by side in frame)
+    dets = [
+        Detection(xyxy=(0.0, 0.0, 100.0, 200.0),   confidence=0.91),
+        Detection(xyxy=(110.0, 0.0, 210.0, 200.0),  confidence=0.85),
+        Detection(xyxy=(220.0, 0.0, 320.0, 200.0),  confidence=0.78),
+        Detection(xyxy=(330.0, 0.0, 430.0, 200.0),  confidence=0.62),
+    ]
+    result = FrameResult(detections=dets, inference_ms=90.0)
+
+    # This is the critical assertion: must be 4, not 1
+    assert result.person_count == 4, (
+        f"person_count should be 4 (all boxes), got {result.person_count}. "
+        "Regression: code must use len(detections), not a boolean check."
+    )
+    assert len(result.confidences) == 4
+
+
+def test_aggregate_counts_via_shared_module() -> None:
+    """Verify aggregate_counts() produces correct percentiles for multi-person sequences."""
+    # Scenario: mostly 2 people detected, occasionally 1 (NMS miss) or 3 (brief good frame)
+    counts = [2, 2, 1, 2, 2, 2, 3, 2, 2, 2]
+    stats = aggregate_counts(counts)
+
+    assert stats["persons_min"] == 1.0
+    assert stats["persons_max"] == 3.0
+    assert stats["persons_median"] == 2.0
+    # P90 of this sequence: most values are 2, outlier 3 at position 7/10
+    assert 2.0 <= stats["persons_p90"] <= 3.0
+    # Return types must be float
+    for key, val in stats.items():
+        assert isinstance(val, float), f"{key} must be float"
 
 
 def test_canonical_serialization_and_ed25519_signature() -> None:

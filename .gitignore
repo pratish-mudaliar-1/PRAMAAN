@@ -56,3 +56,12 @@ runs/
 .webcam_state/
 *.private_key
 dev_webcam_*.json
+
+# Evaluation harness — local development clips and labels (consent-gated, never commit)
+tests/data/counting_eval/*.avi
+tests/data/counting_eval/*.mp4
+tests/data/counting_eval/manifest.json
+tests/data/counting_eval/eval_results_*.json
+
+# Ultralytics / YOLO cache
+.ultralytics/
